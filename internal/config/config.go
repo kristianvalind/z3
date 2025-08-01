@@ -29,6 +29,7 @@ type Config struct {
 	S3Secret    string `mapstructure:"S3_SECRET"`
 	S3Prefix    string `mapstructure:"S3_PREFIX"`
 	Host        string `mapstructure:"HOST"`
+	AWSRegion   string `mapstructure:"AWS_REGION"`
 	S3StorageClass string `mapstructure:"S3_STORAGE_CLASS"`
 
 	// ZFS Configuration
