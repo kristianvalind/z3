@@ -79,7 +79,7 @@ func TestPartReader(t *testing.T) {
 
 	t.Run("read in chunks", func(t *testing.T) {
 		reader.offset = 0 // Reset reader
-		
+
 		// Read first 5 bytes
 		buffer1 := make([]byte, 5)
 		n1, err := reader.Read(buffer1)
@@ -97,7 +97,7 @@ func TestPartReader(t *testing.T) {
 
 	t.Run("read past end", func(t *testing.T) {
 		reader.offset = int64(len(data)) // Set to end
-		
+
 		buffer := make([]byte, 10)
 		n, err := reader.Read(buffer)
 		assert.Equal(t, io.EOF, err)
@@ -173,7 +173,7 @@ func TestComputeMultipartETag(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			result := ComputeMultipartETag(tc.etags)
-			
+
 			// The actual hash will vary, but we can test the format
 			if len(tc.etags) == 1 {
 				assert.Equal(t, tc.etags[0], result)
@@ -181,7 +181,7 @@ func TestComputeMultipartETag(t *testing.T) {
 				assert.True(t, strings.HasPrefix(result, "\""))
 				assert.True(t, strings.HasSuffix(result, "\""))
 				assert.Contains(t, result, "-")
-				
+
 				// Extract the count from the end
 				parts := strings.Split(strings.Trim(result, "\""), "-")
 				assert.Equal(t, "2", parts[len(parts)-1])
@@ -225,13 +225,13 @@ func TestMultipartUploader_OptimizePartSize(t *testing.T) {
 		{
 			name:          "large file",
 			estimatedSize: 100 * 1024 * 1024 * 1024, // 100GB
-			expectedMin:   10 * 1024 * 1024,          // Should be optimized up
+			expectedMin:   10 * 1024 * 1024,         // Should be optimized up
 			expectedMax:   MaxPartSize,
 		},
 		{
 			name:          "huge file",
 			estimatedSize: 500 * 1024 * 1024 * 1024, // 500GB (more reasonable)
-			expectedMin:   50 * 1024 * 1024,         // Should be optimized up  
+			expectedMin:   50 * 1024 * 1024,         // Should be optimized up
 			expectedMax:   MaxPartSize,
 		},
 	}
@@ -240,11 +240,11 @@ func TestMultipartUploader_OptimizePartSize(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			uploader.partSize = DefaultPartSize
 			uploader.optimizePartSize(tc.estimatedSize)
-			
+
 			assert.GreaterOrEqual(t, uploader.partSize, tc.expectedMin)
 			assert.LessOrEqual(t, uploader.partSize, tc.expectedMax)
 			assert.GreaterOrEqual(t, uploader.partSize, MinPartSize)
-			
+
 			// Verify it would result in <= MaxParts
 			if tc.estimatedSize > 0 {
 				maxPossibleParts := (tc.estimatedSize + uploader.partSize - 1) / uploader.partSize
@@ -256,8 +256,8 @@ func TestMultipartUploader_OptimizePartSize(t *testing.T) {
 
 func TestMultipartConstants(t *testing.T) {
 	// Test that our constants are reasonable
-	assert.Equal(t, int64(5*1024*1024), MinPartSize)    // 5MB
-	assert.Equal(t, int64(100*1024*1024), MaxPartSize)  // 100MB
+	assert.Equal(t, int64(5*1024*1024), MinPartSize)      // 5MB
+	assert.Equal(t, int64(100*1024*1024), MaxPartSize)    // 100MB
 	assert.Equal(t, int64(50*1024*1024), DefaultPartSize) // 50MB
 	assert.Equal(t, 10000, MaxParts)
 	assert.Equal(t, 4, DefaultConcurrency)
@@ -298,7 +298,7 @@ func createTestData(size int) []byte {
 func TestCreateTestData(t *testing.T) {
 	data := createTestData(1000)
 	assert.Equal(t, 1000, len(data))
-	
+
 	// Check pattern
 	for i := 0; i < 256; i++ {
 		assert.Equal(t, byte(i), data[i])
@@ -309,18 +309,18 @@ func TestCreateTestData(t *testing.T) {
 // Test multipart upload logic without AWS dependencies
 func TestMultipartUploadLogic(t *testing.T) {
 	testData := bytes.NewReader(createTestData(int(DefaultPartSize * 3))) // 3 parts worth of data
-	
+
 	// Test reading parts
 	buffer := make([]byte, int(DefaultPartSize))
 	partsRead := 0
-	
+
 	for {
 		n, err := testData.Read(buffer)
 		if err == io.EOF {
 			break
 		}
 		require.NoError(t, err)
-		
+
 		partsRead++
 		if partsRead <= 2 {
 			assert.Equal(t, int(DefaultPartSize), n)
@@ -329,7 +329,7 @@ func TestMultipartUploadLogic(t *testing.T) {
 			assert.Equal(t, int(DefaultPartSize), n)
 		}
 	}
-	
+
 	assert.Equal(t, 3, partsRead)
 }
 

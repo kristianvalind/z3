@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
 	"github.com/kristianvalind/z3/internal/backup"
 	"github.com/kristianvalind/z3/internal/config"
+	"github.com/spf13/cobra"
 )
 
 var (

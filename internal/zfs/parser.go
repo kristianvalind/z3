@@ -236,7 +236,7 @@ func parseZFSSize(sizeStr string) (int64, error) {
 	}
 
 	sizeStr = strings.TrimSpace(sizeStr)
-	
+
 	// Try to parse as plain number first
 	if val, err := strconv.ParseInt(sizeStr, 10, 64); err == nil {
 		return val, nil

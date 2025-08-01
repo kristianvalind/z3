@@ -43,8 +43,8 @@ type Snapshot struct {
 	Metadata map[string]string `json:"metadata,omitempty"`
 
 	// Health status and reason (computed fields)
-	isHealthy    *bool   // Cached health status
-	healthReason string  // Reason if unhealthy
+	isHealthy    *bool  // Cached health status
+	healthReason string // Reason if unhealthy
 }
 
 // HealthStatus represents the health status of a snapshot
@@ -53,13 +53,13 @@ type HealthStatus string
 const (
 	// HealthStatusHealthy indicates the snapshot is healthy
 	HealthStatusHealthy HealthStatus = "healthy"
-	
+
 	// HealthStatusCycle indicates a cycle was detected in the parent chain
 	HealthStatusCycle HealthStatus = "cycle"
-	
+
 	// HealthStatusMissingParent indicates the parent snapshot is missing
 	HealthStatusMissingParent HealthStatus = "missing_parent"
-	
+
 	// HealthStatusParentBroken indicates the parent snapshot is broken
 	HealthStatusParentBroken HealthStatus = "parent_broken"
 )

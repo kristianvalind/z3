@@ -116,8 +116,8 @@ func (m *Manager) GetLatest(ctx context.Context) (*snapshot.Snapshot, error) {
 
 	if len(snapshots) == 0 {
 		return nil, snapshot.NewSnapshotError(
-			snapshot.ErrorTypeNotFound, 
-			fmt.Sprintf("no snapshots found for filesystem %s with prefix %s", 
+			snapshot.ErrorTypeNotFound,
+			fmt.Sprintf("no snapshots found for filesystem %s with prefix %s",
 				m.filesystemName, m.snapshotPrefix))
 	}
 
@@ -195,7 +195,7 @@ func (m *Manager) SendIncremental(ctx context.Context, fromSnapshot, toSnapshot 
 
 	result, err := m.executor.Send(ctx, sendOpts)
 	if err != nil {
-		return fmt.Errorf("zfs incremental send failed from %s to %s: %w", 
+		return fmt.Errorf("zfs incremental send failed from %s to %s: %w",
 			fromSnapshot.Name, toSnapshot.Name, err)
 	}
 
@@ -293,8 +293,8 @@ func (m *Manager) ValidateSnapshot(ctx context.Context, snap *snapshot.Snapshot)
 	filesystem := ExtractFilesystemFromSnapshot(snap.Name)
 	if filesystem != m.filesystemName {
 		return snapshot.NewSnapshotErrorWithSnapshot(
-			snapshot.ErrorTypeInvalid, 
-			fmt.Sprintf("snapshot filesystem %s does not match manager filesystem %s", 
+			snapshot.ErrorTypeInvalid,
+			fmt.Sprintf("snapshot filesystem %s does not match manager filesystem %s",
 				filesystem, m.filesystemName), snap.Name)
 	}
 

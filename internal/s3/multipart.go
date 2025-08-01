@@ -34,15 +34,15 @@ const (
 
 // MultipartUploader handles multipart uploads to S3
 type MultipartUploader struct {
-	client       *Client
-	uploadID     string
-	key          string
-	partSize     int64
-	concurrency  int
-	parts        []types.CompletedPart
-	partsMutex   sync.RWMutex
-	errors       []error
-	errorsMutex  sync.RWMutex
+	client      *Client
+	uploadID    string
+	key         string
+	partSize    int64
+	concurrency int
+	parts       []types.CompletedPart
+	partsMutex  sync.RWMutex
+	errors      []error
+	errorsMutex sync.RWMutex
 }
 
 // MultipartUploadOptions contains options for multipart uploads
@@ -216,7 +216,7 @@ func (mu *MultipartUploader) UploadFromReader(ctx context.Context, reader io.Rea
 	if len(mu.errors) > 0 {
 		firstError := mu.errors[0]
 		mu.errorsMutex.RUnlock()
-		
+
 		// Abort the upload on error
 		mu.Abort(ctx)
 		return nil, fmt.Errorf("upload failed: %w", firstError)

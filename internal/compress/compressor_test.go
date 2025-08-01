@@ -33,10 +33,10 @@ func TestCompressorType(t *testing.T) {
 
 func TestCompressorConfig(t *testing.T) {
 	config := CompressorConfig{
-		Type:            CompressorPigz1,
-		CompressCmd:     []string{"pigz", "-1"},
-		DecompressCmd:   []string{"pigz", "-d"},
-		GPGRecipient:    "test@example.com",
+		Type:          CompressorPigz1,
+		CompressCmd:   []string{"pigz", "-1"},
+		DecompressCmd: []string{"pigz", "-d"},
+		GPGRecipient:  "test@example.com",
 	}
 
 	assert.Equal(t, CompressorPigz1, config.Type)
@@ -200,7 +200,7 @@ func TestIsCompressionAvailable(t *testing.T) {
 			// Just ensure the function doesn't panic and returns a boolean
 			result := IsCompressionAvailable(tt.compType)
 			assert.IsType(t, true, result)
-			
+
 			// None should always be available
 			if tt.compType == CompressorNone {
 				assert.True(t, result)
@@ -249,7 +249,7 @@ func TestPipeline_CompressDecompress_Mock(t *testing.T) {
 		testData := "Hello, compression pipeline!"
 		_, err = writer.Write([]byte(testData))
 		require.NoError(t, err)
-		
+
 		err = writer.Close()
 		require.NoError(t, err)
 
@@ -261,7 +261,7 @@ func TestPipeline_CompressDecompress_Mock(t *testing.T) {
 
 		decompressed, err := io.ReadAll(reader)
 		require.NoError(t, err)
-		
+
 		err = reader.Close()
 		require.NoError(t, err)
 
@@ -287,7 +287,7 @@ func TestPipeline_CompressDecompress_Mock(t *testing.T) {
 		testData := "Hello, mock compression!"
 		_, err = writer.Write([]byte(testData))
 		require.NoError(t, err)
-		
+
 		err = writer.Close()
 		require.NoError(t, err)
 
@@ -299,7 +299,7 @@ func TestPipeline_CompressDecompress_Mock(t *testing.T) {
 
 		decompressed, err := io.ReadAll(reader)
 		require.NoError(t, err)
-		
+
 		err = reader.Close()
 		require.NoError(t, err)
 
@@ -351,7 +351,7 @@ func TestPipelineWriter_ErrorHandling(t *testing.T) {
 		// Close twice
 		err = writer.Close()
 		assert.NoError(t, err)
-		
+
 		err = writer.Close()
 		assert.NoError(t, err) // Should not error
 	})
@@ -402,7 +402,7 @@ func TestPipelineReader_ErrorHandling(t *testing.T) {
 		// Close twice (may have broken pipe error which is expected)
 		err = reader.Close()
 		// Don't check error since broken pipe is expected
-		
+
 		err = reader.Close()
 		// Don't check error since broken pipe is expected
 	})
@@ -430,7 +430,7 @@ func TestPipeline_ContextCancellation(t *testing.T) {
 
 		// Write some data
 		writer.Write([]byte("test"))
-		
+
 		// Close should fail due to context cancellation
 		err = writer.Close()
 		assert.Error(t, err)
@@ -454,7 +454,7 @@ func BenchmarkPipelineEmpty(b *testing.B) {
 
 func BenchmarkParseCompressorTypes(b *testing.B) {
 	input := "pigz1,pigz4,gpg,none,unknown,pigz1"
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ParseCompressorTypes(input)

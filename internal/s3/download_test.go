@@ -229,38 +229,38 @@ func (e *testError) Error() string {
 
 func TestDownloadPartCalculation(t *testing.T) {
 	testCases := []struct {
-		name         string
-		totalSize    int64
-		partSize     int64
-		expectedParts int64
+		name                 string
+		totalSize            int64
+		partSize             int64
+		expectedParts        int64
 		expectedLastPartSize int64
 	}{
 		{
-			name:         "exact multiple",
-			totalSize:    100 * 1024 * 1024, // 100MB
-			partSize:     10 * 1024 * 1024,  // 10MB
-			expectedParts: 10,
+			name:                 "exact multiple",
+			totalSize:            100 * 1024 * 1024, // 100MB
+			partSize:             10 * 1024 * 1024,  // 10MB
+			expectedParts:        10,
 			expectedLastPartSize: 10 * 1024 * 1024,
 		},
 		{
-			name:         "with remainder",
-			totalSize:    105 * 1024 * 1024, // 105MB
-			partSize:     10 * 1024 * 1024,  // 10MB
-			expectedParts: 11,
+			name:                 "with remainder",
+			totalSize:            105 * 1024 * 1024, // 105MB
+			partSize:             10 * 1024 * 1024,  // 10MB
+			expectedParts:        11,
 			expectedLastPartSize: 5 * 1024 * 1024, // 5MB remainder
 		},
 		{
-			name:         "single part",
-			totalSize:    5 * 1024 * 1024,  // 5MB
-			partSize:     10 * 1024 * 1024, // 10MB
-			expectedParts: 1,
+			name:                 "single part",
+			totalSize:            5 * 1024 * 1024,  // 5MB
+			partSize:             10 * 1024 * 1024, // 10MB
+			expectedParts:        1,
 			expectedLastPartSize: 5 * 1024 * 1024,
 		},
 		{
-			name:         "very small file",
-			totalSize:    1024, // 1KB
-			partSize:     10 * 1024 * 1024, // 10MB
-			expectedParts: 1,
+			name:                 "very small file",
+			totalSize:            1024,             // 1KB
+			partSize:             10 * 1024 * 1024, // 10MB
+			expectedParts:        1,
 			expectedLastPartSize: 1024,
 		},
 	}
@@ -330,7 +330,7 @@ func TestDownloadStrategySelection(t *testing.T) {
 			// Test the logic for choosing download strategy
 			shouldUseSingle := tc.objectSize <= tc.partSize || tc.concurrency == 1
 			assert.Equal(t, tc.expectSingleThread, shouldUseSingle)
-			
+
 			// Use downloader to avoid "declared and not used" error
 			assert.NotNil(t, downloader)
 		})
@@ -358,42 +358,42 @@ func TestCreateTestObjectInfo(t *testing.T) {
 
 func TestDownloadRangeCalculation(t *testing.T) {
 	testCases := []struct {
-		name      string
-		partNum   int64
-		partSize  int64
-		totalSize int64
+		name        string
+		partNum     int64
+		partSize    int64
+		totalSize   int64
 		expectStart int64
 		expectEnd   int64
 	}{
 		{
-			name:      "first part",
-			partNum:   0,
-			partSize:  10 * 1024 * 1024,
-			totalSize: 50 * 1024 * 1024,
+			name:        "first part",
+			partNum:     0,
+			partSize:    10 * 1024 * 1024,
+			totalSize:   50 * 1024 * 1024,
 			expectStart: 0,
 			expectEnd:   10*1024*1024 - 1,
 		},
 		{
-			name:      "middle part",
-			partNum:   2,
-			partSize:  10 * 1024 * 1024,
-			totalSize: 50 * 1024 * 1024,
+			name:        "middle part",
+			partNum:     2,
+			partSize:    10 * 1024 * 1024,
+			totalSize:   50 * 1024 * 1024,
 			expectStart: 20 * 1024 * 1024,
 			expectEnd:   30*1024*1024 - 1,
 		},
 		{
-			name:      "last part (full)",
-			partNum:   4,
-			partSize:  10 * 1024 * 1024,
-			totalSize: 50 * 1024 * 1024,
+			name:        "last part (full)",
+			partNum:     4,
+			partSize:    10 * 1024 * 1024,
+			totalSize:   50 * 1024 * 1024,
 			expectStart: 40 * 1024 * 1024,
 			expectEnd:   50*1024*1024 - 1,
 		},
 		{
-			name:      "last part (partial)",
-			partNum:   4,
-			partSize:  10 * 1024 * 1024,
-			totalSize: 45 * 1024 * 1024,
+			name:        "last part (partial)",
+			partNum:     4,
+			partSize:    10 * 1024 * 1024,
+			totalSize:   45 * 1024 * 1024,
 			expectStart: 40 * 1024 * 1024,
 			expectEnd:   45*1024*1024 - 1,
 		},
@@ -455,7 +455,7 @@ func TestSynchronizedWriter_EdgeCases(t *testing.T) {
 		// Write first part twice - the first write will win since it's written immediately
 		err := writer.WritePart(0, []byte("first"))
 		assert.NoError(t, err)
-		
+
 		// Write second part
 		err = writer.WritePart(1, []byte("second"))
 		assert.NoError(t, err)

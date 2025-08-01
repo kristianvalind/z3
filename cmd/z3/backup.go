@@ -5,20 +5,20 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/kristianvalind/z3/internal/backup"
+	"github.com/spf13/cobra"
 )
 
 var (
 	// Backup-specific flags
-	snapshotName    string
-	full            bool
-	incremental     bool
-	compressor      string
-	gpgRecipient    string
-	storageClass    string
-	parseable       bool
-	force           bool
+	snapshotName string
+	full         bool
+	incremental  bool
+	compressor   string
+	gpgRecipient string
+	storageClass string
+	parseable    bool
+	force        bool
 )
 
 // backupCmd represents the backup command
@@ -139,13 +139,13 @@ func runBackup(cmd *cobra.Command, args []string) error {
 			fmt.Println("No snapshots needed backup - everything is up to date!")
 		} else {
 			fmt.Printf("Successfully backed up %d snapshot(s):\n\n", len(result.SnapshotsUploaded))
-			
+
 			for _, uploadResult := range result.SnapshotsUploaded {
 				backupTypeStr := "incremental"
 				if uploadResult.IsFullBackup {
 					backupTypeStr = "full"
 				}
-				
+
 				fmt.Printf("  %s (%s)\n", uploadResult.SnapshotName, backupTypeStr)
 				fmt.Printf("    Size: %s", formatSize(uploadResult.Size))
 				if uploadResult.CompressedSize > 0 && uploadResult.CompressedSize != uploadResult.Size {
@@ -153,11 +153,11 @@ func runBackup(cmd *cobra.Command, args []string) error {
 					fmt.Printf(" → %s (%.1f%%)", formatSize(uploadResult.CompressedSize), ratio)
 				}
 				fmt.Println()
-				
+
 				if uploadResult.ParentName != "" {
 					fmt.Printf("    Parent: %s\n", uploadResult.ParentName)
 				}
-				
+
 				fmt.Printf("    Duration: %v\n", uploadResult.Duration.Round(time.Second))
 				if uploadResult.ETag != "" {
 					fmt.Printf("    ETag: %s\n", uploadResult.ETag)

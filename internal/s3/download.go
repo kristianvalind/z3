@@ -333,7 +333,7 @@ func (sw *synchronizedWriter) WaitForCompletion(ctx context.Context) error {
 
 	// Temporarily unlock to allow the goroutine to acquire the lock
 	sw.mutex.Unlock()
-	
+
 	select {
 	case <-done:
 		sw.mutex.Lock() // Re-acquire lock for defer unlock

@@ -128,12 +128,12 @@ func TestValidateChunkSize(t *testing.T) {
 func TestConfigDefaults(t *testing.T) {
 	// Create a temporary directory for test config
 	tempDir := t.TempDir()
-	
+
 	// Create .z3 directory and config file
 	z3Dir := filepath.Join(tempDir, ".z3")
 	err := os.MkdirAll(z3Dir, 0755)
 	require.NoError(t, err)
-	
+
 	configFile := filepath.Join(z3Dir, "z3.conf")
 	err = os.WriteFile(configFile, []byte("[main]\nBUCKET=test-bucket\nFILESYSTEM=tank"), 0644)
 	require.NoError(t, err)
@@ -159,7 +159,7 @@ func TestConfigDefaults(t *testing.T) {
 
 func TestConfigFromFile(t *testing.T) {
 	tempDir := t.TempDir()
-	
+
 	configContent := `[main]
 BUCKET=my-backup-bucket
 S3_KEY_ID=test-key
@@ -178,7 +178,7 @@ COMPRESSOR=gpg
 	z3Dir := filepath.Join(tempDir, ".z3")
 	err := os.MkdirAll(z3Dir, 0755)
 	require.NoError(t, err)
-	
+
 	configFile := filepath.Join(z3Dir, "z3.conf")
 	err = os.WriteFile(configFile, []byte(configContent), 0644)
 	require.NoError(t, err)
@@ -209,7 +209,7 @@ COMPRESSOR=gpg
 
 func TestConfigFromEnvironment(t *testing.T) {
 	tempDir := t.TempDir()
-	
+
 	// Create minimal config file
 	configContent := `[main]
 BUCKET=file-bucket
@@ -219,7 +219,7 @@ FILESYSTEM=tank
 	z3Dir := filepath.Join(tempDir, ".z3")
 	err := os.MkdirAll(z3Dir, 0755)
 	require.NoError(t, err)
-	
+
 	configFile := filepath.Join(z3Dir, "z3.conf")
 	err = os.WriteFile(configFile, []byte(configContent), 0644)
 	require.NoError(t, err)
@@ -241,8 +241,8 @@ FILESYSTEM=tank
 	}()
 
 	os.Setenv("HOME", tempDir)
-	os.Setenv("BUCKET", "env-bucket")        // Override file value
-	os.Setenv("CONCURRENCY", "128")          // Override default
+	os.Setenv("BUCKET", "env-bucket") // Override file value
+	os.Setenv("CONCURRENCY", "128")   // Override default
 
 	config, err := Load()
 	require.NoError(t, err)

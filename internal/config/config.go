@@ -24,12 +24,12 @@ import (
 // Config holds all configuration values for Z3
 type Config struct {
 	// S3 Configuration
-	Bucket      string `mapstructure:"BUCKET"`
-	S3KeyID     string `mapstructure:"S3_KEY_ID"`
-	S3Secret    string `mapstructure:"S3_SECRET"`
-	S3Prefix    string `mapstructure:"S3_PREFIX"`
-	Host        string `mapstructure:"HOST"`
-	AWSRegion   string `mapstructure:"AWS_REGION"`
+	Bucket         string `mapstructure:"BUCKET"`
+	S3KeyID        string `mapstructure:"S3_KEY_ID"`
+	S3Secret       string `mapstructure:"S3_SECRET"`
+	S3Prefix       string `mapstructure:"S3_PREFIX"`
+	Host           string `mapstructure:"HOST"`
+	AWSRegion      string `mapstructure:"AWS_REGION"`
 	S3StorageClass string `mapstructure:"S3_STORAGE_CLASS"`
 
 	// ZFS Configuration
@@ -57,14 +57,14 @@ type FilesystemConfig struct {
 
 // defaults contains the default configuration values
 var defaults = map[string]interface{}{
-	"S3_PREFIX":       "z3-backup/",
+	"S3_PREFIX":        "z3-backup/",
 	"S3_STORAGE_CLASS": "STANDARD_IA",
-	"SNAPSHOT_PREFIX": "zfs-auto-snap:daily",
-	"CONCURRENCY":     64,
-	"MAX_RETRIES":     3,
-	"CHUNK_SIZE":      "5M",
-	"COMPRESSOR":      "pigz1",
-	"GPG_RECIPIENT":   "z3_backup",
+	"SNAPSHOT_PREFIX":  "zfs-auto-snap:daily",
+	"CONCURRENCY":      64,
+	"MAX_RETRIES":      3,
+	"CHUNK_SIZE":       "5M",
+	"COMPRESSOR":       "pigz1",
+	"GPG_RECIPIENT":    "z3_backup",
 }
 
 // configPaths defines the search paths for configuration files
@@ -108,7 +108,7 @@ func Load() (*Config, error) {
 		"FILESYSTEM", "SNAPSHOT_PREFIX", "CONCURRENCY", "MAX_RETRIES", "CHUNK_SIZE",
 		"COMPRESSOR", "GPG_RECIPIENT",
 	}
-	
+
 	for _, key := range configKeys {
 		if envVal := os.Getenv(key); envVal != "" {
 			v.Set(key, envVal)

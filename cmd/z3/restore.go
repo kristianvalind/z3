@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/kristianvalind/z3/internal/backup"
+	"github.com/spf13/cobra"
 )
 
 var (

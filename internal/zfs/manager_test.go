@@ -116,7 +116,7 @@ func TestManager_ValidateSnapshot(t *testing.T) {
 			err := manager.ValidateSnapshot(ctx, tt.snapshot)
 			if tt.wantError {
 				assert.Error(t, err)
-				
+
 				var snapErr *snapshot.SnapshotError
 				if snapshot.AsSnapshotError(err, &snapErr) {
 					assert.Equal(t, tt.errorType, snapErr.Type)
@@ -163,7 +163,7 @@ func TestManager_GetSnapshotsToSend(t *testing.T) {
 				{Name: "tank/data@daily-2024-01-01"},
 			},
 			targetSnapshot: localSnaps[2], // daily-2024-01-03
-			expectedCount:  2,            // Should send 01-02 and 01-03
+			expectedCount:  2,             // Should send 01-02 and 01-03
 			expectedFirst:  "tank/data@daily-2024-01-02",
 		},
 		{
@@ -340,7 +340,7 @@ func TestManager_ErrorHandling(t *testing.T) {
 	t.Run("Send with nil snapshot", func(t *testing.T) {
 		err := manager.Send(ctx, nil, nil)
 		assert.Error(t, err)
-		
+
 		var snapErr *snapshot.SnapshotError
 		if snapshot.AsSnapshotError(err, &snapErr) {
 			assert.Equal(t, snapshot.ErrorTypeInvalid, snapErr.Type)
@@ -350,7 +350,7 @@ func TestManager_ErrorHandling(t *testing.T) {
 	t.Run("SendIncremental with nil snapshots", func(t *testing.T) {
 		err := manager.SendIncremental(ctx, nil, nil, nil)
 		assert.Error(t, err)
-		
+
 		var snapErr *snapshot.SnapshotError
 		if snapshot.AsSnapshotError(err, &snapErr) {
 			assert.Equal(t, snapshot.ErrorTypeInvalid, snapErr.Type)
@@ -360,7 +360,7 @@ func TestManager_ErrorHandling(t *testing.T) {
 	t.Run("GetSendSize with nil snapshot", func(t *testing.T) {
 		_, err := manager.GetSendSize(ctx, nil)
 		assert.Error(t, err)
-		
+
 		var snapErr *snapshot.SnapshotError
 		if snapshot.AsSnapshotError(err, &snapErr) {
 			assert.Equal(t, snapshot.ErrorTypeInvalid, snapErr.Type)
@@ -370,7 +370,7 @@ func TestManager_ErrorHandling(t *testing.T) {
 	t.Run("GetIncrementalSendSize with nil snapshots", func(t *testing.T) {
 		_, err := manager.GetIncrementalSendSize(ctx, nil, nil)
 		assert.Error(t, err)
-		
+
 		var snapErr *snapshot.SnapshotError
 		if snapshot.AsSnapshotError(err, &snapErr) {
 			assert.Equal(t, snapshot.ErrorTypeInvalid, snapErr.Type)

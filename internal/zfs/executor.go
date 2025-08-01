@@ -265,10 +265,10 @@ func (ce *CommandExecutor) Send(ctx context.Context, options SendOptions) (*Comm
 	args = append(args, options.Snapshot)
 
 	cmdOpts := &CommandOptions{
-		Output:       options.Output,
-		StreamOutput: options.Output != nil,
+		Output:        options.Output,
+		StreamOutput:  options.Output != nil,
 		CaptureOutput: options.Output == nil,
-		Timeout:      options.Timeout,
+		Timeout:       options.Timeout,
 	}
 
 	return ce.Execute(ctx, args, cmdOpts)
@@ -301,9 +301,9 @@ func (ce *CommandExecutor) Receive(ctx context.Context, options ReceiveOptions) 
 	}
 
 	cmdOpts := &CommandOptions{
-		Input:        options.Input,
+		Input:         options.Input,
 		CaptureOutput: true,
-		Timeout:      options.Timeout,
+		Timeout:       options.Timeout,
 	}
 
 	return ce.Execute(ctx, args, cmdOpts)
@@ -346,16 +346,16 @@ type ListOptions struct {
 
 // SendOptions configures the 'zfs send' command
 type SendOptions struct {
-	Snapshot           string        // Snapshot to send
-	FromSnapshot       string        // Source snapshot for incremental send
-	Incremental        bool          // Use -i (incremental) vs -I (intermediate)
-	DryRun             bool          // Dry run mode
-	Verbose            bool          // Verbose output
-	ParseableOutput    bool          // Parseable output
-	Recursive          bool          // Include child filesystems
-	IncludeProperties  bool          // Include properties
-	Output             io.Writer     // Output destination
-	Timeout            time.Duration // Command timeout
+	Snapshot          string        // Snapshot to send
+	FromSnapshot      string        // Source snapshot for incremental send
+	Incremental       bool          // Use -i (incremental) vs -I (intermediate)
+	DryRun            bool          // Dry run mode
+	Verbose           bool          // Verbose output
+	ParseableOutput   bool          // Parseable output
+	Recursive         bool          // Include child filesystems
+	IncludeProperties bool          // Include properties
+	Output            io.Writer     // Output destination
+	Timeout           time.Duration // Command timeout
 }
 
 // ReceiveOptions configures the 'zfs recv' command

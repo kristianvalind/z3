@@ -213,7 +213,7 @@ func TestBuildSnapshotMetadata(t *testing.T) {
 	mockSnap := &snapshot.Snapshot{
 		Name: "tank/data@test",
 	}
-	
+
 	metadata := manager.buildSnapshotMetadata(mockSnap, true, "", additionalMetadata)
 
 	assert.Equal(t, "true", metadata["is_full"])
@@ -251,7 +251,7 @@ func TestOptimizePartSize(t *testing.T) {
 		{
 			name:          "huge file",
 			estimatedSize: 1000 * 1024 * 1024 * 1024, // 1TB
-			expectedMin:   100 * 1024 * 1024,          // Should hit max
+			expectedMin:   100 * 1024 * 1024,         // Should hit max
 			expectedMax:   100 * 1024 * 1024,
 		},
 		{
@@ -332,12 +332,12 @@ func TestRestoreOptionsDefaults(t *testing.T) {
 // Benchmark tests
 func BenchmarkOptimizePartSize(b *testing.B) {
 	sizes := []int64{
-		1024 * 1024,                   // 1MB
-		100 * 1024 * 1024,             // 100MB
-		1024 * 1024 * 1024,            // 1GB
-		10 * 1024 * 1024 * 1024,       // 10GB
-		100 * 1024 * 1024 * 1024,      // 100GB
-		1000 * 1024 * 1024 * 1024,     // 1TB
+		1024 * 1024,               // 1MB
+		100 * 1024 * 1024,         // 100MB
+		1024 * 1024 * 1024,        // 1GB
+		10 * 1024 * 1024 * 1024,   // 10GB
+		100 * 1024 * 1024 * 1024,  // 100GB
+		1000 * 1024 * 1024 * 1024, // 1TB
 	}
 
 	b.ResetTimer()
@@ -400,7 +400,7 @@ func TestBackupWorkflowStructure(t *testing.T) {
 				if tt.opts == nil {
 					tt.opts = &BackupOptions{}
 				}
-				
+
 				// Basic validation that would happen in Backup method
 				assert.IsType(t, &BackupOptions{}, tt.opts)
 			})
@@ -440,7 +440,7 @@ func TestBackupWorkflowStructure(t *testing.T) {
 					assert.True(t, tt.wantErr)
 					return
 				}
-				
+
 				if tt.opts.SnapshotName == "" {
 					assert.True(t, tt.wantErr)
 				} else {

@@ -99,7 +99,7 @@ tank/data@other-prefix                     500K   10.5G       -      500K`
 	assert.Equal(t, "tank/data@zfs-auto-snap:daily-2024-01-01", snap1.Name)
 	assert.True(t, snap1.IsFullBackup) // First snapshot should be full backup
 	assert.Equal(t, "", snap1.ParentName)
-	assert.Equal(t, int64(11274289152), snap1.Size) // 10.5 * 1024^3
+	assert.Equal(t, int64(11274289152), snap1.Size)       // 10.5 * 1024^3
 	assert.Equal(t, int64(1289748), snap1.CompressedSize) // 1.23 * 1024^2
 
 	// Check second snapshot

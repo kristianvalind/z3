@@ -44,14 +44,9 @@ test-coverage:
 bench:
 	go test -bench=. -benchmem ./...
 
-# Linting
-lint:
-	golangci-lint run
-
 # Format code
 format:
 	go fmt ./...
-	goimports -w .
 
 # Clean build artifacts
 clean:
@@ -73,12 +68,6 @@ build-linux:
 build-freebsd:
 	GOOS=freebsd GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/z3-freebsd-amd64 ./cmd/z3
 	GOOS=freebsd GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/pput-freebsd-amd64 ./cmd/pput
-
-# Development helpers
-dev-setup:
-	@echo "Setting up development environment..."
-	@which golangci-lint || (echo "Installing golangci-lint..." && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
-	@which goimports || (echo "Installing goimports..." && go install golang.org/x/tools/cmd/goimports@latest)
 
 # Quick development build (no optimization)
 dev: format

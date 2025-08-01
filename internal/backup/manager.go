@@ -54,9 +54,9 @@ func (slm *snapshotListManager) GetFilesystem() string {
 
 // Manager orchestrates backup operations combining ZFS, compression, and S3
 type Manager struct {
-	config          *config.Config
-	zfsManager      *zfs.Manager
-	s3Client        *s3.Client
+	config           *config.Config
+	zfsManager       *zfs.Manager
+	s3Client         *s3.Client
 	compressPipeline *compress.Pipeline
 }
 
@@ -92,18 +92,18 @@ type SnapshotUploadResult struct {
 
 // RestoreOptions contains options for restore operations
 type RestoreOptions struct {
-	TargetDataset   string
-	SnapshotName    string
-	DryRun          bool
-	Force           bool
+	TargetDataset string
+	SnapshotName  string
+	DryRun        bool
+	Force         bool
 }
 
 // RestoreResult contains the result of a restore operation
 type RestoreResult struct {
-	SnapshotName     string
-	RestoredDataset  string
-	Size             int64
-	Duration         time.Duration
+	SnapshotName      string
+	RestoredDataset   string
+	Size              int64
+	Duration          time.Duration
 	SnapshotsRestored int
 }
 
@@ -127,9 +127,9 @@ func NewManager(ctx context.Context, cfg *config.Config) (*Manager, error) {
 	compressPipeline := compress.NewDefaultPipeline(compressorTypes, cfg.GPGRecipient)
 
 	return &Manager{
-		config:          cfg,
-		zfsManager:      zfsManager,
-		s3Client:        s3Client,
+		config:           cfg,
+		zfsManager:       zfsManager,
+		s3Client:         s3Client,
 		compressPipeline: compressPipeline,
 	}, nil
 }
@@ -326,7 +326,7 @@ func (m *Manager) uploadSnapshot(ctx context.Context, snap *snapshot.Snapshot, a
 	// For now, we'll estimate compressed size based on the actual uploaded data
 	// TODO: Track actual part sizes during upload for more accurate measurement
 	var compressedSize int64 = estimatedSize // Placeholder until we implement size tracking
-	
+
 	// In the future, we can track this by modifying the multipart uploader
 	// to keep track of actual uploaded bytes per part
 
@@ -488,11 +488,11 @@ func (m *Manager) buildRestorationChain(targetSnapshot *snapshot.Snapshot, allSn
 	// Build chain backwards from target to full backup
 	for current != nil {
 		chain = append(snapshot.SnapshotList{current}, chain...) // Prepend
-		
+
 		if current.IsFullBackup {
 			break
 		}
-		
+
 		// Find parent
 		current = allSnapshots.FindByName(current.ParentName)
 	}
@@ -530,10 +530,10 @@ func optimizePartSize(estimatedSize int64) int64 {
 // GetStatus returns the current status of the backup manager
 func (m *Manager) GetStatus() map[string]interface{} {
 	return map[string]interface{}{
-		"filesystem":    m.zfsManager.GetFilesystem(),
-		"bucket":        m.s3Client.GetBucketName(),
-		"prefix":        m.config.S3Prefix,
-		"compressors":   m.compressPipeline.GetMetadata(),
-		"dry_run":       m.zfsManager.GetDryRun(),
+		"filesystem":  m.zfsManager.GetFilesystem(),
+		"bucket":      m.s3Client.GetBucketName(),
+		"prefix":      m.config.S3Prefix,
+		"compressors": m.compressPipeline.GetMetadata(),
+		"dry_run":     m.zfsManager.GetDryRun(),
 	}
 }

@@ -130,13 +130,13 @@ type ZFSError struct {
 // Error implements the error interface
 func (e *ZFSError) Error() string {
 	if e.Snapshot != "" {
-		return fmt.Sprintf("zfs %s failed for %s@%s (exit code %d): %s", 
+		return fmt.Sprintf("zfs %s failed for %s@%s (exit code %d): %s",
 			e.Operation, e.Dataset, e.Snapshot, e.ExitCode, e.Stderr)
 	} else if e.Dataset != "" {
-		return fmt.Sprintf("zfs %s failed for %s (exit code %d): %s", 
+		return fmt.Sprintf("zfs %s failed for %s (exit code %d): %s",
 			e.Operation, e.Dataset, e.ExitCode, e.Stderr)
 	}
-	return fmt.Sprintf("zfs %s failed (exit code %d): %s", 
+	return fmt.Sprintf("zfs %s failed (exit code %d): %s",
 		e.Operation, e.ExitCode, e.Stderr)
 }
 
@@ -172,13 +172,13 @@ type S3Error struct {
 // Error implements the error interface
 func (e *S3Error) Error() string {
 	if e.Key != "" {
-		return fmt.Sprintf("s3 %s failed for %s/%s (status %d, code %s): %s", 
+		return fmt.Sprintf("s3 %s failed for %s/%s (status %d, code %s): %s",
 			e.Operation, e.Bucket, e.Key, e.StatusCode, e.ErrorCode, e.Message)
 	} else if e.Bucket != "" {
-		return fmt.Sprintf("s3 %s failed for bucket %s (status %d, code %s): %s", 
+		return fmt.Sprintf("s3 %s failed for bucket %s (status %d, code %s): %s",
 			e.Operation, e.Bucket, e.StatusCode, e.ErrorCode, e.Message)
 	}
-	return fmt.Sprintf("s3 %s failed (status %d, code %s): %s", 
+	return fmt.Sprintf("s3 %s failed (status %d, code %s): %s",
 		e.Operation, e.StatusCode, e.ErrorCode, e.Message)
 }
 
@@ -299,17 +299,17 @@ func AsSnapshotError(err error, target **SnapshotError) bool {
 	if err == nil {
 		return false
 	}
-	
+
 	if snapErr, ok := err.(*SnapshotError); ok {
 		*target = snapErr
 		return true
 	}
-	
+
 	// Try to unwrap and check again
 	if unwrapper, ok := err.(interface{ Unwrap() error }); ok {
 		return AsSnapshotError(unwrapper.Unwrap(), target)
 	}
-	
+
 	return false
 }
 
@@ -318,17 +318,17 @@ func AsZFSError(err error, target **ZFSError) bool {
 	if err == nil {
 		return false
 	}
-	
+
 	if zfsErr, ok := err.(*ZFSError); ok {
 		*target = zfsErr
 		return true
 	}
-	
+
 	// Try to unwrap and check again
 	if unwrapper, ok := err.(interface{ Unwrap() error }); ok {
 		return AsZFSError(unwrapper.Unwrap(), target)
 	}
-	
+
 	return false
 }
 
@@ -337,16 +337,16 @@ func AsS3Error(err error, target **S3Error) bool {
 	if err == nil {
 		return false
 	}
-	
+
 	if s3Err, ok := err.(*S3Error); ok {
 		*target = s3Err
 		return true
 	}
-	
+
 	// Try to unwrap and check again
 	if unwrapper, ok := err.(interface{ Unwrap() error }); ok {
 		return AsS3Error(unwrapper.Unwrap(), target)
 	}
-	
+
 	return false
 }

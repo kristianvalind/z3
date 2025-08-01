@@ -288,7 +288,7 @@ func (c *Client) ListSnapshots(ctx context.Context, filesystem string) (snapshot
 				CompressedSize: obj.Size, // S3 objects are already compressed if uploaded compressed
 				CreatedAt:      obj.LastModified,
 				Metadata: map[string]string{
-					"etag":         obj.ETag,
+					"etag":          obj.ETag,
 					"storage_class": obj.StorageClass,
 				},
 			}
@@ -320,11 +320,11 @@ type ObjectInfo struct {
 
 // PutObjectOptions contains options for uploading objects
 type PutObjectOptions struct {
-	ContentType           string
-	StorageClass          string
-	ServerSideEncryption  string
-	Metadata              map[string]string
-	ACL                   string
+	ContentType          string
+	StorageClass         string
+	ServerSideEncryption string
+	Metadata             map[string]string
+	ACL                  string
 }
 
 // PutObjectResult contains the result of a put operation

@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/spf13/cobra"
-	"github.com/kristianvalind/z3/internal/zfs"
 	"github.com/kristianvalind/z3/internal/s3"
+	"github.com/kristianvalind/z3/internal/zfs"
 	"github.com/kristianvalind/z3/pkg/snapshot"
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -117,7 +117,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 // printSnapshotList prints a list of snapshots
 func printSnapshotList(title string, snapshots snapshot.SnapshotList, healthManager snapshot.SnapshotList) {
 	fmt.Printf("%s (%d total):\n", title, len(snapshots))
-	
+
 	if len(snapshots) == 0 {
 		fmt.Println("  (none)")
 		return
@@ -244,7 +244,7 @@ func printCombinedStatus(localSnapshots, remoteSnapshots snapshot.SnapshotList) 
 			size = formatSize(remoteSnap.Size)
 		}
 
-		fmt.Printf("%-35s %-15s %-12s %-10s %-12s %s\n", 
+		fmt.Printf("%-35s %-15s %-12s %-10s %-12s %s\n",
 			shortName, parentName, snapType, health, localState, size)
 	}
 
@@ -253,7 +253,7 @@ func printCombinedStatus(localSnapshots, remoteSnapshots snapshot.SnapshotList) 
 	// Print summary
 	localCount := len(localSnapshots)
 	remoteCount := len(remoteSnapshots)
-	
+
 	// Count missing snapshots
 	missingFromRemote := 0
 	for name := range localMap {
@@ -261,7 +261,7 @@ func printCombinedStatus(localSnapshots, remoteSnapshots snapshot.SnapshotList) 
 			missingFromRemote++
 		}
 	}
-	
+
 	missingFromLocal := 0
 	for name := range remoteMap {
 		if localMap[name] == nil {

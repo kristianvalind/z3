@@ -210,40 +210,39 @@ func (m *MockSnapshotManager) GetFilesystem() string {
 	return "tank/test"
 }
 
-
 func TestSnapshot_IsHealthy(t *testing.T) {
 	// Create test snapshots
 	snap1 := &Snapshot{
 		Name:         "tank/data@snap1",
 		IsFullBackup: true,
 	}
-	
+
 	snap2 := &Snapshot{
 		Name:         "tank/data@snap2",
 		IsFullBackup: false,
 		ParentName:   "tank/data@snap1",
 	}
-	
+
 	snap3 := &Snapshot{
 		Name:         "tank/data@snap3",
 		IsFullBackup: false,
 		ParentName:   "tank/data@snap2",
 	}
-	
+
 	// Snapshot with missing parent
 	snapOrphan := &Snapshot{
 		Name:         "tank/data@orphan",
 		IsFullBackup: false,
 		ParentName:   "tank/data@missing",
 	}
-	
+
 	// Snapshot that creates a cycle
 	snapCycle1 := &Snapshot{
 		Name:         "tank/data@cycle1",
 		IsFullBackup: false,
 		ParentName:   "tank/data@cycle2",
 	}
-	
+
 	snapCycle2 := &Snapshot{
 		Name:         "tank/data@cycle2",
 		IsFullBackup: false,
@@ -297,7 +296,7 @@ func TestSnapshot_IsHealthy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			manager := NewMockSnapshotManager(tt.snapshots)
-			
+
 			snap, err := manager.Get(context.Background(), tt.testSnap)
 			require.NoError(t, err)
 			require.NotNil(t, snap)
@@ -345,9 +344,9 @@ func TestSnapshotList_Operations(t *testing.T) {
 		// Add snapshots with different prefixes
 		snapDaily := &Snapshot{Name: "tank/data@zfs-auto-snap:daily-2024-01-01"}
 		snapHourly := &Snapshot{Name: "tank/data@zfs-auto-snap:hourly-2024-01-01"}
-		
+
 		mixedList := SnapshotList{snap1, snapDaily, snapHourly}
-		
+
 		dailyList := mixedList.FilterByPrefix("zfs-auto-snap:daily")
 		assert.Len(t, dailyList, 1)
 		assert.Equal(t, "tank/data@zfs-auto-snap:daily-2024-01-01", dailyList[0].Name)
@@ -359,7 +358,7 @@ func TestSnapshot_HealthCaching(t *testing.T) {
 		Name:         "tank/data@snap1",
 		IsFullBackup: true,
 	}
-	
+
 	manager := NewMockSnapshotManager([]*Snapshot{snap})
 
 	// First call should compute health
@@ -375,7 +374,7 @@ func TestSnapshot_HealthCaching(t *testing.T) {
 	// Clear cache and verify it's recomputed
 	snap.ClearHealthCache()
 	assert.Nil(t, snap.isHealthy)
-	
+
 	result3 := snap.IsHealthy(manager)
 	assert.True(t, result3)
 	assert.NotNil(t, snap.isHealthy)

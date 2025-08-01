@@ -302,11 +302,11 @@ func TestCommandExecutor_Timeout(t *testing.T) {
 	executor.Timeout = 100 * time.Millisecond // Very short timeout
 
 	ctx := context.Background()
-	
+
 	// This would normally take longer than 100ms if it were real
 	// but since we're using dry run, it should complete quickly
 	executor.DryRun = true
-	
+
 	args := []string{"send", "tank/data@snapshot"}
 	opts := &CommandOptions{
 		Timeout: 1 * time.Second, // Override with longer timeout
