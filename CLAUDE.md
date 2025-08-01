@@ -9,10 +9,8 @@ Z3 is a ZFS to S3 backup tool that provides efficient snapshot backup and restor
 ### Core Components
 
 1. **Main CLI (`z3/snap.py`)** - Primary command-line interface
-2. **S3 Upload Tool (`z3/pput.py`)** - Multipart S3 upload with concurrency
-3. **S3 Download Tool (`z3/get.py`)** - S3 object retrieval  
-4. **SSH Sync Tool (`z3/ssh_sync.py`)** - ZFS snapshot synchronization over SSH
-5. **Configuration (`z3/config.py`)** - Multi-layer configuration management
+2. **Configuration (`z3/config.py`)** - Multi-layer configuration management
+3. **Core Libraries** - S3 upload/download, SSH sync capabilities
 
 ### Key Features
 - Full and incremental ZFS backups
@@ -77,9 +75,7 @@ github.com/bigkevmcd/go-configparser
 z3-go/
 ├── cmd/
 │   ├── z3/           # Main CLI application
-│   ├── pput/         # S3 upload tool
-│   ├── z3get/        # S3 download tool  
-│   └── z3sync/       # SSH sync tool
+│   └── z3/           # Main CLI application
 ├── internal/
 │   ├── config/       # Configuration management
 │   ├── zfs/          # ZFS operations
@@ -132,7 +128,7 @@ type BackupManager struct {
 4. **Snapshot types** - Core data structures
 
 #### Phase 2: Advanced Features  
-1. **Multipart S3 uploads** - Port `pput.py` concurrency model
+1. **Multipart S3 uploads** - Integrated S3 upload functionality
 2. **Compression support** - Implement pigz and GPG pipelines
 3. **Health checking** - Port snapshot integrity verification
 4. **CLI interface** - Port all subcommands (`status`, `backup`, `restore`)
@@ -229,7 +225,7 @@ go test ./...
 
 # Build binaries
 go build -o bin/z3 ./cmd/z3
-go build -o bin/pput ./cmd/pput
+go build -o bin/z3 ./cmd/z3
 
 # Cross-compile for different platforms
 GOOS=linux GOARCH=amd64 go build -o bin/z3-linux ./cmd/z3

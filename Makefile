@@ -18,19 +18,10 @@ deps:
 	go mod tidy
 
 # Build all binaries
-build: build-z3 build-pput build-z3get build-z3sync
+build: build-z3
 
 build-z3:
 	go build $(LDFLAGS) -o $(BUILD_DIR)/z3 ./cmd/z3
-
-build-pput:
-	go build $(LDFLAGS) -o $(BUILD_DIR)/pput ./cmd/pput
-
-build-z3get:
-	go build $(LDFLAGS) -o $(BUILD_DIR)/z3get ./cmd/z3get
-
-build-z3sync:
-	go build $(LDFLAGS) -o $(BUILD_DIR)/z3sync ./cmd/z3sync
 
 # Run tests
 test:
@@ -56,18 +47,13 @@ clean:
 # Install binaries to GOPATH/bin
 install: build
 	go install $(LDFLAGS) ./cmd/z3
-	go install $(LDFLAGS) ./cmd/pput
-	go install $(LDFLAGS) ./cmd/z3get
-	go install $(LDFLAGS) ./cmd/z3sync
 
 # Cross-compile for different platforms
 build-linux:
 	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/z3-linux-amd64 ./cmd/z3
-	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/pput-linux-amd64 ./cmd/pput
 
 build-freebsd:
 	GOOS=freebsd GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/z3-freebsd-amd64 ./cmd/z3
-	GOOS=freebsd GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/pput-freebsd-amd64 ./cmd/pput
 
 # Quick development build (no optimization)
 dev: format

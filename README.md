@@ -106,10 +106,9 @@ Compared to the original Python implementation:
   - [ ] Restore engine
   - [ ] Compression support (pigz, GPG)
 
-- [ ] **Phase 4**: CLI & Additional Tools
-  - [ ] Main CLI application
-  - [ ] Utility tools (`pput`, `z3get`)
-  - [ ] SSH sync tool
+- [x] **Phase 4**: CLI & Additional Tools
+  - [x] Main CLI application
+  - [x] Integrated backup/restore/status commands
 
 - [ ] **Phase 5**: Testing & Documentation
   - [ ] Comprehensive testing
@@ -121,10 +120,7 @@ Compared to the original Python implementation:
 ```
 z3-go/
 ├── cmd/                    # Command-line applications
-│   ├── z3/                # Main CLI tool
-│   ├── pput/              # S3 upload utility
-│   ├── z3get/             # S3 download utility
-│   └── z3sync/            # SSH sync utility
+│   └── z3/                # Main CLI tool
 ├── internal/               # Private application code
 │   ├── config/            # Configuration management
 │   ├── zfs/               # ZFS operations

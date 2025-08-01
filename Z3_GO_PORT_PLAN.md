@@ -136,7 +136,7 @@ type SnapshotManager interface {
 **Effort: 7-10 days**
 
 #### Tasks:
-- [ ] Port `pput.py` multipart upload logic
+- [x] Port multipart upload logic
 - [ ] Implement worker pool with goroutines
 - [ ] Create stream handler for chunked reading
 - [ ] Implement MD5 checksum calculation
@@ -246,14 +246,13 @@ type SnapshotManager interface {
 **Effort: 5-7 days**
 
 #### Tasks:
-- [ ] Port `pput` standalone tool
+- [x] Integrated into main z3 CLI
 - [ ] Port `z3_get` download tool
 - [ ] Implement progress reporting
 - [ ] Add utility-specific options
 
 #### Key Files:
-- `cmd/pput/main.go`
-- `cmd/z3get/main.go`
+- `cmd/z3/main.go` (integrated CLI)
 
 ### 4.3 SSH Sync Tool (Week 8)
 **Effort: 7-10 days**
@@ -266,7 +265,6 @@ type SnapshotManager interface {
 - [ ] Add mbuffer integration
 
 #### Key Files:
-- `cmd/z3sync/main.go`
 - `internal/ssh/client.go`
 - `internal/ssh/sync.go`
 
