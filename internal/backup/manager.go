@@ -276,7 +276,14 @@ func (m *Manager) uploadSnapshot(ctx context.Context, snap *snapshot.Snapshot, a
 	if isFullBackup {
 		estimatedSize, err = m.zfsManager.GetSendSize(ctx, snap)
 	} else {
-		parentSnap := allSnapshots[index-1]
+		var parentSnap *snapshot.Snapshot
+		if index > 0 {
+			parentSnap = allSnapshots[index-1]
+		} else if baseSnapshot != nil {
+			parentSnap = baseSnapshot
+		} else {
+			return nil, fmt.Errorf("no parent snapshot available for incremental backup")
+		}
 		estimatedSize, err = m.zfsManager.GetIncrementalSendSize(ctx, parentSnap, snap)
 	}
 	if err != nil {
@@ -332,7 +339,15 @@ func (m *Manager) uploadSnapshot(ctx context.Context, snap *snapshot.Snapshot, a
 		if isFullBackup {
 			zfsSendErr = m.zfsManager.Send(ctx, snap, compressedWriter)
 		} else {
-			parentSnap := allSnapshots[index-1]
+			var parentSnap *snapshot.Snapshot
+			if index > 0 {
+				parentSnap = allSnapshots[index-1]
+			} else if baseSnapshot != nil {
+				parentSnap = baseSnapshot
+			} else {
+				zfsSendErr = fmt.Errorf("no parent snapshot available for incremental backup")
+				return
+			}
 			zfsSendErr = m.zfsManager.SendIncremental(ctx, parentSnap, snap, compressedWriter)
 		}
 	}()
