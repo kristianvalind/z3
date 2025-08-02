@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/kristianvalind/z3/internal/compress"
@@ -536,4 +537,60 @@ func (m *Manager) GetStatus() map[string]interface{} {
 		"compressors": m.compressPipeline.GetMetadata(),
 		"dry_run":     m.zfsManager.GetDryRun(),
 	}
+}
+
+// ListLocalSnapshots returns all local snapshots for the configured filesystem
+func (m *Manager) ListLocalSnapshots(ctx context.Context, ignorePrefix bool) (snapshot.SnapshotList, error) {
+	// Get all snapshots from ZFS
+	allSnapshots, err := m.zfsManager.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list ZFS snapshots: %w", err)
+	}
+
+	// If ignorePrefix is true, return all snapshots
+	if ignorePrefix {
+		return allSnapshots, nil
+	}
+
+	// Otherwise, filter by prefix
+	prefix := m.config.GetSnapshotPrefix(m.zfsManager.GetFilesystem())
+	var filtered snapshot.SnapshotList
+	for _, snap := range allSnapshots {
+		// Check if snapshot name contains the prefix
+		// The snapshot name format is typically "daily-2024-01-01", "weekly-2024-01-01", etc.
+		if strings.Contains(snap.Name, prefix) || prefix == "" {
+			filtered = append(filtered, snap)
+		}
+	}
+
+	return filtered, nil
+}
+
+// ListRemoteSnapshots returns all snapshots stored in S3
+func (m *Manager) ListRemoteSnapshots(ctx context.Context) (snapshot.SnapshotList, error) {
+	// List all objects in S3 with our prefix
+	prefix := m.config.S3Prefix + m.zfsManager.GetFilesystem() + "@"
+	
+	objects, err := m.s3Client.ListObjects(ctx, prefix)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list S3 objects: %w", err)
+	}
+
+	var snapshots snapshot.SnapshotList
+	for _, obj := range objects {
+		// Extract snapshot name from S3 key
+		// Format: prefix/filesystem@snapshot-name
+		if idx := strings.LastIndex(obj.Key, "@"); idx >= 0 {
+			snapName := obj.Key[idx+1:]
+			snap := &snapshot.Snapshot{
+				Name:           snapName,
+				Size:           obj.Size,
+				CompressedSize: obj.Size, // S3 stores compressed size
+				CreatedAt:      obj.LastModified,
+			}
+			snapshots = append(snapshots, snap)
+		}
+	}
+
+	return snapshots, nil
 }

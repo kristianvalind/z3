@@ -88,6 +88,12 @@ func (s *Snapshot) GetFilesystem() string {
 	return ""
 }
 
+// GetFullName returns the full snapshot name (same as Name)
+// This is added for consistency and clarity in some contexts
+func (s *Snapshot) GetFullName() string {
+	return s.Name
+}
+
 // IsHealthy returns whether the snapshot is healthy.
 // This method caches the result to avoid recomputation.
 func (s *Snapshot) IsHealthy(manager SnapshotManager) bool {
