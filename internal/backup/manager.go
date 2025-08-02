@@ -168,7 +168,7 @@ func (m *Manager) Backup(ctx context.Context, opts *BackupOptions) (*BackupResul
 	}
 
 	// Get remote snapshots
-	remoteSnapshots, err := m.s3Client.ListSnapshots(ctx, m.zfsManager.GetFilesystem())
+	remoteSnapshots, err := m.ListRemoteSnapshots(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list remote snapshots: %w", err)
 	}
