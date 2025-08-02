@@ -185,7 +185,25 @@ func (m *Manager) Backup(ctx context.Context, opts *BackupOptions) (*BackupResul
 	var snapshotsToUpload snapshot.SnapshotList
 	var backupType string
 
-	if opts.ForceFullBackup || len(remoteSnapshots) == 0 {
+	// Find the base snapshot for incremental backup
+	var baseSnapshot *snapshot.Snapshot
+	if !opts.ForceFullBackup && len(remoteSnapshots) > 0 {
+		// Find the latest common snapshot between local and remote
+		localSnapshots, err := m.zfsManager.List(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list local snapshots: %w", err)
+		}
+		
+		for i := len(localSnapshots) - 1; i >= 0; i-- {
+			localSnap := localSnapshots[i]
+			if remoteSnapshots.FindByName(localSnap.Name) != nil {
+				baseSnapshot = localSnap
+				break
+			}
+		}
+	}
+	
+	if opts.ForceFullBackup || len(remoteSnapshots) == 0 || baseSnapshot == nil {
 		// Full backup
 		snapshotsToUpload = snapshot.SnapshotList{targetSnapshot}
 		backupType = "full"
@@ -210,7 +228,7 @@ func (m *Manager) Backup(ctx context.Context, opts *BackupOptions) (*BackupResul
 	var totalSize, totalCompressedSize int64
 
 	for i, snapToUpload := range snapshotsToUpload {
-		uploadResult, err := m.uploadSnapshot(ctx, snapToUpload, snapshotsToUpload, i, opts)
+		uploadResult, err := m.uploadSnapshot(ctx, snapToUpload, snapshotsToUpload, i, opts, baseSnapshot)
 		if err != nil {
 			return nil, fmt.Errorf("failed to upload snapshot %s: %w", snapToUpload.Name, err)
 		}
@@ -230,17 +248,26 @@ func (m *Manager) Backup(ctx context.Context, opts *BackupOptions) (*BackupResul
 }
 
 // uploadSnapshot uploads a single snapshot to S3
-func (m *Manager) uploadSnapshot(ctx context.Context, snap *snapshot.Snapshot, allSnapshots snapshot.SnapshotList, index int, opts *BackupOptions) (*SnapshotUploadResult, error) {
+func (m *Manager) uploadSnapshot(ctx context.Context, snap *snapshot.Snapshot, allSnapshots snapshot.SnapshotList, index int, opts *BackupOptions, baseSnapshot *snapshot.Snapshot) (*SnapshotUploadResult, error) {
 	uploadStart := time.Now()
 
 	// Generate S3 key
 	s3Key := m.generateS3Key(snap.Name)
 
 	// Determine if this is a full backup
-	isFullBackup := index == 0 && (len(allSnapshots) == 1 || snap.IsFullBackup)
+	// This should be a full backup only if:
+	// 1. We're forcing full backup AND it's the first snapshot, OR
+	// 2. There's no base snapshot (no common snapshot with remote)
+	isFullBackup := (opts.ForceFullBackup && index == 0) || baseSnapshot == nil
 	var parentName string
-	if !isFullBackup && index > 0 {
-		parentName = allSnapshots[index-1].Name
+	if !isFullBackup {
+		if index > 0 {
+			// Use previous snapshot in the upload list as parent
+			parentName = allSnapshots[index-1].Name
+		} else if baseSnapshot != nil {
+			// Use the base snapshot (latest common with remote) as parent
+			parentName = baseSnapshot.Name
+		}
 	}
 
 	// Get estimated size
