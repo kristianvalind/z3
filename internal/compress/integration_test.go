@@ -1,3 +1,4 @@
+//go:build integration
 // +build integration
 
 package compress_test
@@ -25,7 +26,7 @@ func TestGPGMultipleRecipients(t *testing.T) {
 
 	// Test data
 	testData := []byte("This is test data for multiple recipient GPG encryption")
-	
+
 	tests := []struct {
 		name       string
 		recipients string
@@ -57,16 +58,16 @@ func TestGPGMultipleRecipients(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create pipeline with GPG compression
 			pipeline := compress.NewDefaultPipeline([]compress.CompressorType{compress.CompressorGPG}, tt.recipients)
-			
+
 			// Check if GPG was actually added to pipeline
 			metadata := pipeline.GetMetadata()
 			if tt.recipients == "" {
 				assert.NotContains(t, metadata["compressors"], "gpg")
 				return // Skip rest of test for empty recipients
 			}
-			
+
 			assert.Contains(t, metadata["compressors"], "gpg")
-			
+
 			// Verify metadata contains both old and new format
 			if metadata["gpg_recipient"] != "" {
 				// Should contain first recipient for backwards compatibility
@@ -77,7 +78,7 @@ func TestGPGMultipleRecipients(t *testing.T) {
 				// Should contain all recipients in new format
 				assert.Equal(t, normalizeRecipients(tt.recipients), metadata["gpg_recipients"])
 			}
-			
+
 			// Note: Actual GPG encryption/decryption would require GPG keys to be set up
 			// This is left as a manual test since it requires GPG configuration
 			t.Logf("Pipeline created with recipients: %s", tt.recipients)
@@ -113,22 +114,22 @@ func TestMultipleRecipientsCommandGeneration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pipeline := compress.NewDefaultPipeline([]compress.CompressorType{compress.CompressorGPG}, tt.recipients)
-			
+
 			// Access internal configs to verify command construction
 			// This is a bit of a hack but necessary for testing
 			ctx := context.Background()
 			var buf bytes.Buffer
-			
+
 			writer, err := pipeline.Compress(ctx, &buf)
 			require.NoError(t, err)
-			
+
 			// Close immediately to avoid hanging
 			writer.Close()
-			
+
 			// Verify the command was constructed correctly by checking metadata
 			metadata := pipeline.GetMetadata()
 			t.Logf("Recipients in metadata: %s", metadata["gpg_recipients"])
-			
+
 			// Verify both old and new formats are present
 			recipients := parseRecipients(tt.recipients)
 			if len(recipients) > 0 {
@@ -144,7 +145,7 @@ func parseRecipients(recipients string) []string {
 	if recipients == "" {
 		return nil
 	}
-	
+
 	var result []string
 	for _, r := range bytes.Split([]byte(recipients), []byte(",")) {
 		r = bytes.TrimSpace(r)
@@ -152,7 +153,7 @@ func parseRecipients(recipients string) []string {
 			result = append(result, string(r))
 		}
 	}
-	
+
 	return result
 }
 
@@ -188,10 +189,10 @@ func TestBackwardsCompatibility(t *testing.T) {
 	metadata := pipeline.GetMetadata()
 	assert.Equal(t, "pigz1,gpg", metadata["compressors"])
 	assert.Equal(t, "olduser@example.com", metadata["gpg_recipient"])
-	
+
 	// The new code should also populate gpg_recipients for consistency
 	assert.Equal(t, "olduser@example.com", metadata["gpg_recipients"])
-	
+
 	t.Log("Backwards compatibility verified - old single-recipient backups can be restored")
 }
 
@@ -203,7 +204,7 @@ func TestEndToEndCompression(t *testing.T) {
 	}
 
 	testData := []byte("Hello, this is test data for compression!")
-	
+
 	// Create pipeline
 	pipeline := compress.NewDefaultPipeline([]compress.CompressorType{compress.CompressorPigz1}, "")
 	ctx := context.Background()
@@ -212,26 +213,26 @@ func TestEndToEndCompression(t *testing.T) {
 	var compressed bytes.Buffer
 	writer, err := pipeline.Compress(ctx, &compressed)
 	require.NoError(t, err)
-	
+
 	_, err = writer.Write(testData)
 	require.NoError(t, err)
-	
+
 	err = writer.Close()
 	require.NoError(t, err)
 
 	// Verify compression worked (compressed should be different from original)
 	assert.NotEqual(t, testData, compressed.Bytes())
-	
+
 	// Decompress
 	reader, err := pipeline.Decompress(ctx, &compressed)
 	require.NoError(t, err)
-	
+
 	decompressed, err := io.ReadAll(reader)
 	require.NoError(t, err)
-	
+
 	err = reader.Close()
 	require.NoError(t, err)
-	
+
 	// Verify decompression restored original data
 	assert.Equal(t, testData, decompressed)
 }

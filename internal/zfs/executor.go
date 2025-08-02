@@ -99,8 +99,8 @@ func (ce *CommandExecutor) Execute(ctx context.Context, args []string, opts *Com
 		Command: cmdStr,
 	}
 
-	// Handle dry run
-	if dryRun {
+	// Handle dry run - only skip execution for write operations
+	if dryRun && !isReadOnlyCommand(args) {
 		fmt.Printf("DRY RUN: %s\n", cmdStr)
 		return result, nil
 	}
@@ -420,4 +420,38 @@ func parseSendSizeOutput(output string) (int64, error) {
 	}
 
 	return 0, fmt.Errorf("could not parse send size from output: %s", output)
+}
+
+// isReadOnlyCommand determines if a ZFS command is read-only
+func isReadOnlyCommand(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+
+	// List of read-only ZFS commands that are safe to run during dry-run
+	readOnlyCommands := []string{
+		"list",
+		"get",
+		"holds",
+		"diff",
+		"bookmark",
+	}
+
+	command := args[0]
+	for _, cmd := range readOnlyCommands {
+		if command == cmd {
+			return true
+		}
+	}
+
+	// Also check for send with -n flag (dry run send)
+	if command == "send" && len(args) > 1 {
+		for _, arg := range args[1:] {
+			if arg == "-n" {
+				return true
+			}
+		}
+	}
+
+	return false
 }

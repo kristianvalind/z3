@@ -45,10 +45,10 @@ func TestCompressorConfig(t *testing.T) {
 	assert.Equal(t, []string{"pigz", "-d"}, config.DecompressCmd)
 	assert.Equal(t, "test@example.com", config.GPGRecipient)
 	assert.Equal(t, []string{"test@example.com", "test2@example.com"}, config.GPGRecipients)
-	
+
 	// Test GetRecipients method
 	assert.Equal(t, []string{"test@example.com", "test2@example.com"}, config.GetRecipients())
-	
+
 	// Test backwards compatibility
 	config2 := CompressorConfig{
 		Type:         CompressorGPG,
@@ -135,7 +135,7 @@ func TestPipeline_GetMetadata(t *testing.T) {
 		assert.Equal(t, "test@example.com", metadata["gpg_recipient"])
 		assert.Equal(t, "test@example.com", metadata["gpg_recipients"])
 	})
-	
+
 	t.Run("multiple recipients", func(t *testing.T) {
 		config := CompressorConfig{
 			Type:          CompressorGPG,
@@ -145,7 +145,7 @@ func TestPipeline_GetMetadata(t *testing.T) {
 		pipeline := NewPipeline(config)
 		metadata := pipeline.GetMetadata()
 		assert.Equal(t, "gpg", metadata["compressors"])
-		assert.Equal(t, "user1@example.com", metadata["gpg_recipient"]) // Old format
+		assert.Equal(t, "user1@example.com", metadata["gpg_recipient"])                                      // Old format
 		assert.Equal(t, "user1@example.com,user2@example.com,user3@example.com", metadata["gpg_recipients"]) // New format
 	})
 
@@ -535,7 +535,7 @@ func TestNewDefaultPipelineWithMultipleRecipients(t *testing.T) {
 				assert.Len(t, pipeline.configs, 1)
 				assert.Equal(t, CompressorGPG, pipeline.configs[0].Type)
 				assert.Equal(t, tt.expectedCmd, pipeline.configs[0].CompressCmd)
-				
+
 				// Check backwards compatibility
 				recipients := parseRecipients(tt.gpgRecipient)
 				if len(recipients) > 0 {

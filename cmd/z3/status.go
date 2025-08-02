@@ -123,14 +123,75 @@ func printSnapshotList(title string, snapshots snapshot.SnapshotList, healthMana
 		return
 	}
 
-	// Table headers
-	fmt.Printf("%-40s %-12s %-10s %-15s %s\n", "NAME", "TYPE", "HEALTH", "SIZE", "CREATED")
-	fmt.Printf("%s\n", strings.Repeat("-", 80))
+	// Calculate column widths based on content
+	nameWidth := 4    // "NAME"
+	typeWidth := 4    // "TYPE"
+	healthWidth := 6  // "HEALTH"
+	sizeWidth := 4    // "SIZE"
+	createdWidth := 7 // "CREATED"
 
 	for _, snap := range snapshots {
 		shortName := snap.GetShortName()
-		if len(shortName) > 38 {
-			shortName = shortName[:35] + "..."
+		if len(shortName) > nameWidth {
+			nameWidth = len(shortName)
+		}
+
+		snapType := "incremental"
+		if snap.IsFullBackup {
+			snapType = "full"
+		}
+		if len(snapType) > typeWidth {
+			typeWidth = len(snapType)
+		}
+
+		health := "ok"
+		if healthManager != nil {
+			manager := &snapshotListManager{snapshots: healthManager}
+			if !snap.IsHealthy(manager) {
+				health = "broken"
+			}
+		}
+		if len(health) > healthWidth {
+			healthWidth = len(health)
+		}
+
+		size := formatSize(snap.Size)
+		if len(size) > sizeWidth {
+			sizeWidth = len(size)
+		}
+
+		created := snap.CreatedAt.Format("2006-01-02 15:04")
+		if len(created) > createdWidth {
+			createdWidth = len(created)
+		}
+	}
+
+	// Add some padding
+	nameWidth += 2
+	typeWidth += 2
+	healthWidth += 2
+	sizeWidth += 2
+
+	// Cap name width to prevent overly wide tables
+	if nameWidth > 50 {
+		nameWidth = 50
+	}
+
+	// Table headers
+	fmt.Printf("%-*s %-*s %-*s %-*s %s\n",
+		nameWidth, "NAME",
+		typeWidth, "TYPE",
+		healthWidth, "HEALTH",
+		sizeWidth, "SIZE",
+		"CREATED")
+
+	totalWidth := nameWidth + typeWidth + healthWidth + sizeWidth + createdWidth + 4 // 4 spaces between columns
+	fmt.Printf("%s\n", strings.Repeat("-", totalWidth))
+
+	for _, snap := range snapshots {
+		shortName := snap.GetShortName()
+		if len(shortName) > nameWidth-2 {
+			shortName = shortName[:nameWidth-5] + "..."
 		}
 
 		snapType := "incremental"
@@ -142,7 +203,6 @@ func printSnapshotList(title string, snapshots snapshot.SnapshotList, healthMana
 		if healthManager != nil {
 			manager := &snapshotListManager{snapshots: healthManager}
 			if !snap.IsHealthy(manager) {
-				// Get health reason (this would need to be implemented in the snapshot package)
 				health = "broken"
 			}
 		}
@@ -150,7 +210,12 @@ func printSnapshotList(title string, snapshots snapshot.SnapshotList, healthMana
 		size := formatSize(snap.Size)
 		created := snap.CreatedAt.Format("2006-01-02 15:04")
 
-		fmt.Printf("%-40s %-12s %-10s %-15s %s\n", shortName, snapType, health, size, created)
+		fmt.Printf("%-*s %-*s %-*s %-*s %s\n",
+			nameWidth, shortName,
+			typeWidth, snapType,
+			healthWidth, health,
+			sizeWidth, size,
+			created)
 	}
 	fmt.Println()
 }
@@ -183,9 +248,13 @@ func printCombinedStatus(localSnapshots, remoteSnapshots snapshot.SnapshotList) 
 		names = append(names, name)
 	}
 
-	// Print table headers
-	fmt.Printf("%-35s %-15s %-12s %-10s %-12s %s\n", "NAME", "PARENT", "TYPE", "HEALTH", "LOCAL", "SIZE")
-	fmt.Printf("%s\n", strings.Repeat("-", 95))
+	// Calculate column widths based on content
+	nameWidth := 4   // "NAME"
+	parentWidth := 6 // "PARENT"
+	typeWidth := 4   // "TYPE"
+	healthWidth := 6 // "HEALTH"
+	localWidth := 5  // "LOCAL"
+	sizeWidth := 4   // "SIZE"
 
 	for _, name := range names {
 		localSnap := localMap[name]
@@ -198,8 +267,8 @@ func printCombinedStatus(localSnapshots, remoteSnapshots snapshot.SnapshotList) 
 		}
 
 		shortName := snap.GetShortName()
-		if len(shortName) > 33 {
-			shortName = shortName[:30] + "..."
+		if len(shortName) > nameWidth {
+			nameWidth = len(shortName)
 		}
 
 		// Parent name
@@ -208,8 +277,106 @@ func printCombinedStatus(localSnapshots, remoteSnapshots snapshot.SnapshotList) 
 			parentParts := strings.Split(snap.ParentName, "@")
 			if len(parentParts) > 1 {
 				parentName = parentParts[1]
-				if len(parentName) > 13 {
-					parentName = parentName[:10] + "..."
+			}
+		}
+		if len(parentName) > parentWidth {
+			parentWidth = len(parentName)
+		}
+
+		// Type
+		snapType := "incremental"
+		if snap.IsFullBackup {
+			snapType = "full"
+		}
+		if len(snapType) > typeWidth {
+			typeWidth = len(snapType)
+		}
+
+		// Health
+		health := "-"
+		if remoteSnap != nil {
+			health = "ok"
+			if len(remoteSnapshots) > 0 {
+				manager := &snapshotListManager{snapshots: remoteSnapshots}
+				if !remoteSnap.IsHealthy(manager) {
+					health = "broken"
+				}
+			}
+		}
+		if len(health) > healthWidth {
+			healthWidth = len(health)
+		}
+
+		// Local state
+		localState := "missing"
+		if localSnap != nil {
+			localState = "ok"
+		}
+		if len(localState) > localWidth {
+			localWidth = len(localState)
+		}
+
+		// Size
+		size := ""
+		if remoteSnap != nil && remoteSnap.Size > 0 {
+			size = formatSize(remoteSnap.Size)
+		}
+		if len(size) > sizeWidth {
+			sizeWidth = len(size)
+		}
+	}
+
+	// Add some padding
+	nameWidth += 2
+	parentWidth += 2
+	typeWidth += 2
+	healthWidth += 2
+	localWidth += 2
+	sizeWidth += 2
+
+	// Cap widths to prevent overly wide tables
+	if nameWidth > 40 {
+		nameWidth = 40
+	}
+	if parentWidth > 20 {
+		parentWidth = 20
+	}
+
+	// Print table headers
+	fmt.Printf("%-*s %-*s %-*s %-*s %-*s %s\n",
+		nameWidth, "NAME",
+		parentWidth, "PARENT",
+		typeWidth, "TYPE",
+		healthWidth, "HEALTH",
+		localWidth, "LOCAL",
+		"SIZE")
+
+	totalWidth := nameWidth + parentWidth + typeWidth + healthWidth + localWidth + sizeWidth + 5 // 5 spaces between columns
+	fmt.Printf("%s\n", strings.Repeat("-", totalWidth))
+
+	for _, name := range names {
+		localSnap := localMap[name]
+		remoteSnap := remoteMap[name]
+
+		// Use remote snapshot for most info, fall back to local
+		snap := remoteSnap
+		if snap == nil {
+			snap = localSnap
+		}
+
+		shortName := snap.GetShortName()
+		if len(shortName) > nameWidth-2 {
+			shortName = shortName[:nameWidth-5] + "..."
+		}
+
+		// Parent name
+		parentName := ""
+		if !snap.IsFullBackup && snap.ParentName != "" {
+			parentParts := strings.Split(snap.ParentName, "@")
+			if len(parentParts) > 1 {
+				parentName = parentParts[1]
+				if len(parentName) > parentWidth-2 {
+					parentName = parentName[:parentWidth-5] + "..."
 				}
 			}
 		}
@@ -244,8 +411,13 @@ func printCombinedStatus(localSnapshots, remoteSnapshots snapshot.SnapshotList) 
 			size = formatSize(remoteSnap.Size)
 		}
 
-		fmt.Printf("%-35s %-15s %-12s %-10s %-12s %s\n",
-			shortName, parentName, snapType, health, localState, size)
+		fmt.Printf("%-*s %-*s %-*s %-*s %-*s %s\n",
+			nameWidth, shortName,
+			parentWidth, parentName,
+			typeWidth, snapType,
+			healthWidth, health,
+			localWidth, localState,
+			size)
 	}
 
 	fmt.Println()

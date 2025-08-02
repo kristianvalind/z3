@@ -323,11 +323,14 @@ func (c *Config) String() string {
 
 // findConfigFile searches for configuration files in the standard paths
 func findConfigFile() string {
+	var searchedPaths []string
+
 	// Try all combinations of paths and names
 	for _, path := range configPaths {
 		expandedPath := os.ExpandEnv(path)
 		for _, name := range configNames {
 			fullPath := filepath.Join(expandedPath, name)
+			searchedPaths = append(searchedPaths, fullPath)
 			if _, err := os.Stat(fullPath); err == nil {
 				return fullPath
 			}
@@ -336,9 +339,20 @@ func findConfigFile() string {
 
 	// Also try the z3 directory for compatibility
 	defaultConfigPath := filepath.Join("z3", "z3.conf")
+	searchedPaths = append(searchedPaths, defaultConfigPath)
 	if _, err := os.Stat(defaultConfigPath); err == nil {
 		return defaultConfigPath
 	}
+
+	// If no config found, print helpful message
+	fmt.Fprintf(os.Stderr, "No configuration file found. Searched locations:\n")
+	for _, path := range searchedPaths {
+		fmt.Fprintf(os.Stderr, "  - %s\n", path)
+	}
+	fmt.Fprintf(os.Stderr, "\nYou can:\n")
+	fmt.Fprintf(os.Stderr, "  1. Create a config file at one of the above locations\n")
+	fmt.Fprintf(os.Stderr, "  2. Set environment variables (BUCKET, FILESYSTEM, etc.)\n")
+	fmt.Fprintf(os.Stderr, "  3. Use --config flag to specify a custom location\n\n")
 
 	return ""
 }

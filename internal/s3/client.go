@@ -2,8 +2,11 @@ package s3
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -12,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
 
 	z3config "github.com/kristianvalind/z3/internal/config"
 	"github.com/kristianvalind/z3/pkg/snapshot"
@@ -60,7 +64,7 @@ func NewClient(ctx context.Context, cfg *z3config.Config, opts *ClientOptions) (
 	// Prepare AWS config options
 	var configOpts []func(*config.LoadOptions) error
 
-	// Set region
+	// Set initial region (will be updated if needed)
 	region := "us-east-1" // Default region
 	if opts != nil && opts.Region != "" {
 		region = opts.Region
@@ -105,13 +109,52 @@ func NewClient(ctx context.Context, cfg *z3config.Config, opts *ClientOptions) (
 	// Create S3 client
 	s3Client := s3.NewFromConfig(awsConfig, s3Opts...)
 
-	return &Client{
+	// Create client with initial configuration
+	client := &Client{
 		s3Client:   s3Client,
 		config:     cfg,
 		bucketName: cfg.Bucket,
 		region:     region,
 		endpoint:   endpoint,
-	}, nil
+	}
+
+	// For custom endpoints (like MinIO), skip region detection
+	if endpoint != "" {
+		return client, nil
+	}
+
+	// Try to detect the actual bucket region
+	actualRegion, err := client.detectBucketRegion(ctx)
+	if err == nil && actualRegion != "" && actualRegion != region {
+		// Bucket is in a different region, recreate client with correct region
+		fmt.Fprintf(os.Stderr, "Detected bucket region: %s (was using: %s)\n", actualRegion, region)
+
+		// Update region in config options
+		configOpts = []func(*config.LoadOptions) error{
+			config.WithRegion(actualRegion),
+		}
+
+		// Re-add credentials if provided
+		if cfg.S3KeyID != "" && cfg.S3Secret != "" {
+			creds := credentials.NewStaticCredentialsProvider(cfg.S3KeyID, cfg.S3Secret, "")
+			configOpts = append(configOpts, config.WithCredentialsProvider(creds))
+		} else if opts != nil && opts.Credentials != nil {
+			configOpts = append(configOpts, config.WithCredentialsProvider(opts.Credentials))
+		}
+
+		// Reload AWS config with correct region
+		awsConfig, err = config.LoadDefaultConfig(ctx, configOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load AWS config with detected region: %w", err)
+		}
+
+		// Recreate S3 client
+		s3Client = s3.NewFromConfig(awsConfig, s3Opts...)
+		client.s3Client = s3Client
+		client.region = actualRegion
+	}
+
+	return client, nil
 }
 
 // GetBucketName returns the configured bucket name
@@ -129,6 +172,70 @@ func (c *Client) GetEndpoint() string {
 	return c.endpoint
 }
 
+// detectBucketRegion attempts to detect the actual region of the bucket
+func (c *Client) detectBucketRegion(ctx context.Context) (string, error) {
+	// Try to get bucket location
+	output, err := c.s3Client.GetBucketLocation(ctx, &s3.GetBucketLocationInput{
+		Bucket: aws.String(c.bucketName),
+	})
+
+	if err != nil {
+		// If we get a 301 redirect error, try to parse the region from the error
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) {
+			if apiErr.ErrorCode() == "PermanentRedirect" || apiErr.ErrorCode() == "MovedPermanently" {
+				// Try to extract region from error message or headers
+				// AWS sometimes includes the correct endpoint in the error
+				if strings.Contains(err.Error(), ".s3.") && strings.Contains(err.Error(), ".amazonaws.com") {
+					// Try to parse region from error message
+					if match := regionFromEndpoint(err.Error()); match != "" {
+						return match, nil
+					}
+				}
+			}
+		}
+		// Don't treat this as fatal - we'll use the configured region
+		return "", nil
+	}
+
+	// Handle the location constraint
+	if output.LocationConstraint == "" {
+		// Empty string means us-east-1
+		return "us-east-1", nil
+	}
+
+	// EU is returned as "EU" but should be "eu-west-1"
+	if string(output.LocationConstraint) == "EU" {
+		return "eu-west-1", nil
+	}
+
+	return string(output.LocationConstraint), nil
+}
+
+// regionFromEndpoint tries to extract region from an S3 endpoint URL
+func regionFromEndpoint(text string) string {
+	// Look for patterns like "bucket-name.s3.region.amazonaws.com"
+	re := regexp.MustCompile(`\.s3[.-]([a-z0-9-]+)\.amazonaws\.com`)
+	matches := re.FindStringSubmatch(text)
+	if len(matches) > 1 {
+		region := matches[1]
+		// Handle special cases
+		if region == "external-1" {
+			return "us-east-1"
+		}
+		return region
+	}
+
+	// Look for patterns like "s3.region.amazonaws.com"
+	re2 := regexp.MustCompile(`s3\.([a-z0-9-]+)\.amazonaws\.com`)
+	matches2 := re2.FindStringSubmatch(text)
+	if len(matches2) > 1 {
+		return matches2[1]
+	}
+
+	return ""
+}
+
 // ListObjects lists objects in the bucket with the given prefix
 func (c *Client) ListObjects(ctx context.Context, prefix string) ([]ObjectInfo, error) {
 	var objects []ObjectInfo
@@ -141,6 +248,16 @@ func (c *Client) ListObjects(ctx context.Context, prefix string) ([]ObjectInfo, 
 	for paginator.HasMorePages() {
 		output, err := paginator.NextPage(ctx)
 		if err != nil {
+			// Check if this is a redirect error
+			var apiErr smithy.APIError
+			if errors.As(err, &apiErr) && apiErr.ErrorCode() == "PermanentRedirect" {
+				// Try to extract the correct region from the error
+				if region := regionFromEndpoint(err.Error()); region != "" {
+					return nil, fmt.Errorf("bucket is in region %s but client is configured for %s. "+
+						"Please set AWS_REGION=%s or add AWS_REGION=%s to your config file",
+						region, c.region, region, region)
+				}
+			}
 			return nil, fmt.Errorf("failed to list objects: %w", err)
 		}
 

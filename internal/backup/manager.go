@@ -448,7 +448,11 @@ func (m *Manager) restoreSnapshot(ctx context.Context, snap *snapshot.Snapshot, 
 
 func (m *Manager) generateS3Key(snapshotName string) string {
 	if m.config.S3Prefix != "" {
-		return fmt.Sprintf("%s/%s", m.config.S3Prefix, snapshotName)
+		// Ensure we don't have double slashes
+		prefix := strings.TrimSuffix(m.config.S3Prefix, "/")
+		if prefix != "" {
+			return fmt.Sprintf("%s/%s", prefix, snapshotName)
+		}
 	}
 	return snapshotName
 }
@@ -569,8 +573,12 @@ func (m *Manager) ListLocalSnapshots(ctx context.Context, ignorePrefix bool) (sn
 // ListRemoteSnapshots returns all snapshots stored in S3
 func (m *Manager) ListRemoteSnapshots(ctx context.Context) (snapshot.SnapshotList, error) {
 	// List all objects in S3 with our prefix
-	prefix := m.config.S3Prefix + m.zfsManager.GetFilesystem() + "@"
-	
+	prefix := m.config.S3Prefix
+	if prefix != "" && !strings.HasSuffix(prefix, "/") {
+		prefix = prefix + "/"
+	}
+	prefix = prefix + m.zfsManager.GetFilesystem() + "@"
+
 	objects, err := m.s3Client.ListObjects(ctx, prefix)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list S3 objects: %w", err)

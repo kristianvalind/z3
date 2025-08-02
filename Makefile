@@ -55,6 +55,9 @@ build-linux:
 build-freebsd:
 	GOOS=freebsd GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/z3-freebsd-amd64 ./cmd/z3
 
+build-freebsd-arm64:
+	GOOS=freebsd GOARCH=arm64 go build $(LDFLAGS) -o $(BUILD_DIR)/z3-freebsd-arm64 ./cmd/z3
+
 # Quick development build (no optimization)
 dev: format
 	go build -o $(BUILD_DIR)/z3 ./cmd/z3

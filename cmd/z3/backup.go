@@ -11,16 +11,16 @@ import (
 
 var (
 	// Backup-specific flags
-	snapshotName  string
-	full          bool
-	incremental   bool
-	allSnapshots  bool
-	ignorePrefix  bool
-	compressor    string
-	gpgRecipient  string
-	storageClass  string
-	parseable     bool
-	force         bool
+	snapshotName string
+	full         bool
+	incremental  bool
+	allSnapshots bool
+	ignorePrefix bool
+	compressor   string
+	gpgRecipient string
+	storageClass string
+	parseable    bool
+	force        bool
 )
 
 // backupCmd represents the backup command
