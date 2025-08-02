@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/kristianvalind/z3/internal/backup"
@@ -246,6 +247,7 @@ func printCombinedStatus(localSnapshots, remoteSnapshots snapshot.SnapshotList) 
 	for name := range allNames {
 		names = append(names, name)
 	}
+	sort.Strings(names)
 
 	// Calculate column widths based on content
 	nameWidth := 4   // "NAME"
@@ -368,10 +370,10 @@ func printCombinedStatus(localSnapshots, remoteSnapshots snapshot.SnapshotList) 
 			shortName = shortName[:nameWidth-5] + "..."
 		}
 
-		// Parent name
+		// Parent name (only meaningful for remote snapshots)
 		parentName := ""
-		if !snap.IsFullBackup && snap.ParentName != "" {
-			parentParts := strings.Split(snap.ParentName, "@")
+		if remoteSnap != nil && !remoteSnap.IsFullBackup && remoteSnap.ParentName != "" {
+			parentParts := strings.Split(remoteSnap.ParentName, "@")
 			if len(parentParts) > 1 {
 				parentName = parentParts[1]
 				if len(parentName) > parentWidth-2 {
@@ -380,10 +382,14 @@ func printCombinedStatus(localSnapshots, remoteSnapshots snapshot.SnapshotList) 
 			}
 		}
 
-		// Type
-		snapType := "incremental"
-		if snap.IsFullBackup {
-			snapType = "full"
+		// Type (only meaningful for remote snapshots)
+		snapType := "-"
+		if remoteSnap != nil {
+			if remoteSnap.IsFullBackup {
+				snapType = "full"
+			} else {
+				snapType = "incremental"
+			}
 		}
 
 		// Health (only for remote snapshots)

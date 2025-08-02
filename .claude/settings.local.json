@@ -10,7 +10,8 @@
       "Bash(go build:*)",
       "Bash(mv:*)",
       "Bash(./bin/z3 backup:*)",
-      "Bash(make:*)"
+      "Bash(make:*)",
+      "Bash(GOOS=freebsd GOARCH=arm64 go build -o z3-freebsd-arm64 ./cmd/z3)"
     ],
     "deny": []
   }
