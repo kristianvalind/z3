@@ -9,7 +9,8 @@
       "Bash(go doc:*)",
       "Bash(go build:*)",
       "Bash(mv:*)",
-      "Bash(./bin/z3 backup:*)"
+      "Bash(./bin/z3 backup:*)",
+      "Bash(make:*)"
     ],
     "deny": []
   }

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kristianvalind/z3/internal/s3"
+	"github.com/kristianvalind/z3/internal/backup"
 	"github.com/kristianvalind/z3/internal/zfs"
 	"github.com/kristianvalind/z3/pkg/snapshot"
 	"github.com/spf13/cobra"
@@ -67,12 +67,6 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	printVerbose("Creating ZFS manager...")
 	zfsManager := zfs.NewManager(cfg)
 
-	printVerbose("Creating S3 client...")
-	s3Client, err := s3.NewClient(ctx, cfg, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create S3 client: %w", err)
-	}
-
 	// Get local snapshots
 	var localSnapshots snapshot.SnapshotList
 	if !showRemote {
@@ -87,7 +81,12 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	var remoteSnapshots snapshot.SnapshotList
 	if !showLocal {
 		printVerbose("Listing remote snapshots...")
-		remoteSnapshots, err = s3Client.ListSnapshots(ctx, cfg.Filesystem)
+		// Create backup manager to properly list remote snapshots with prefix
+		manager, err := backup.NewManager(ctx, cfg)
+		if err != nil {
+			return fmt.Errorf("failed to create backup manager: %w", err)
+		}
+		remoteSnapshots, err = manager.ListRemoteSnapshots(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to list remote snapshots: %w", err)
 		}

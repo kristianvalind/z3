@@ -462,7 +462,8 @@ func (m *Manager) buildSnapshotMetadata(snap *snapshot.Snapshot, isFullBackup bo
 
 	// Core metadata
 	metadata["snapshot_name"] = snap.Name
-	metadata["is_full"] = fmt.Sprintf("%t", isFullBackup)
+	// Use "isfull" for compatibility with Python Z3
+	metadata["isfull"] = fmt.Sprintf("%t", isFullBackup)
 	metadata["backup_time"] = time.Now().UTC().Format(time.RFC3339)
 	metadata["filesystem"] = m.zfsManager.GetFilesystem()
 
@@ -589,13 +590,48 @@ func (m *Manager) ListRemoteSnapshots(ctx context.Context) (snapshot.SnapshotLis
 		// Extract snapshot name from S3 key
 		// Format: prefix/filesystem@snapshot-name
 		if idx := strings.LastIndex(obj.Key, "@"); idx >= 0 {
-			snapName := obj.Key[idx+1:]
+			fullName := obj.Key
+			// Remove the prefix if present
+			if m.config.S3Prefix != "" {
+				fullName = strings.TrimPrefix(fullName, m.config.S3Prefix)
+				fullName = strings.TrimPrefix(fullName, "/")
+			}
+			
+			// Get object metadata to determine if it's a full backup and parent info
+			objInfo, err := m.s3Client.HeadObject(ctx, obj.Key)
+			if err != nil {
+				// If we can't get metadata, create snapshot with basic info
+				snap := &snapshot.Snapshot{
+					Name:           fullName,
+					Size:           obj.Size,
+					CompressedSize: obj.Size,
+					CreatedAt:      obj.LastModified,
+				}
+				snapshots = append(snapshots, snap)
+				continue
+			}
+			
+			// Create snapshot with metadata
 			snap := &snapshot.Snapshot{
-				Name:           snapName,
+				Name:           fullName,
 				Size:           obj.Size,
-				CompressedSize: obj.Size, // S3 stores compressed size
+				CompressedSize: obj.Size,
 				CreatedAt:      obj.LastModified,
 			}
+			
+			// Parse metadata
+			if objInfo.Metadata != nil {
+				// Check both "isfull" and "is_full" for backwards compatibility
+				if isFullStr, ok := objInfo.Metadata["isfull"]; ok {
+					snap.IsFullBackup = isFullStr == "true"
+				} else if isFullStr, ok := objInfo.Metadata["is_full"]; ok {
+					snap.IsFullBackup = isFullStr == "true"
+				}
+				if parent, ok := objInfo.Metadata["parent"]; ok && parent != "" {
+					snap.ParentName = parent
+				}
+			}
+			
 			snapshots = append(snapshots, snap)
 		}
 	}
