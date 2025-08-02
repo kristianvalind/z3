@@ -37,12 +37,24 @@ func TestCompressorConfig(t *testing.T) {
 		CompressCmd:   []string{"pigz", "-1"},
 		DecompressCmd: []string{"pigz", "-d"},
 		GPGRecipient:  "test@example.com",
+		GPGRecipients: []string{"test@example.com", "test2@example.com"},
 	}
 
 	assert.Equal(t, CompressorPigz1, config.Type)
 	assert.Equal(t, []string{"pigz", "-1"}, config.CompressCmd)
 	assert.Equal(t, []string{"pigz", "-d"}, config.DecompressCmd)
 	assert.Equal(t, "test@example.com", config.GPGRecipient)
+	assert.Equal(t, []string{"test@example.com", "test2@example.com"}, config.GPGRecipients)
+	
+	// Test GetRecipients method
+	assert.Equal(t, []string{"test@example.com", "test2@example.com"}, config.GetRecipients())
+	
+	// Test backwards compatibility
+	config2 := CompressorConfig{
+		Type:         CompressorGPG,
+		GPGRecipient: "single@example.com",
+	}
+	assert.Equal(t, []string{"single@example.com"}, config2.GetRecipients())
 }
 
 func TestNewPipeline(t *testing.T) {
@@ -121,6 +133,20 @@ func TestPipeline_GetMetadata(t *testing.T) {
 		metadata := pipeline.GetMetadata()
 		assert.Equal(t, "pigz1,gpg", metadata["compressors"])
 		assert.Equal(t, "test@example.com", metadata["gpg_recipient"])
+		assert.Equal(t, "test@example.com", metadata["gpg_recipients"])
+	})
+	
+	t.Run("multiple recipients", func(t *testing.T) {
+		config := CompressorConfig{
+			Type:          CompressorGPG,
+			GPGRecipients: []string{"user1@example.com", "user2@example.com", "user3@example.com"},
+			GPGRecipient:  "user1@example.com", // First recipient for backwards compatibility
+		}
+		pipeline := NewPipeline(config)
+		metadata := pipeline.GetMetadata()
+		assert.Equal(t, "gpg", metadata["compressors"])
+		assert.Equal(t, "user1@example.com", metadata["gpg_recipient"]) // Old format
+		assert.Equal(t, "user1@example.com,user2@example.com,user3@example.com", metadata["gpg_recipients"]) // New format
 	})
 
 	t.Run("gpg without recipient", func(t *testing.T) {
@@ -458,5 +484,108 @@ func BenchmarkParseCompressorTypes(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ParseCompressorTypes(input)
+	}
+}
+
+func TestNewDefaultPipelineWithMultipleRecipients(t *testing.T) {
+	tests := []struct {
+		name            string
+		compressorTypes []CompressorType
+		gpgRecipient    string
+		expectedCmd     []string
+	}{
+		{
+			name:            "single recipient",
+			compressorTypes: []CompressorType{CompressorGPG},
+			gpgRecipient:    "user1@example.com",
+			expectedCmd:     []string{"gpg", "-e", "-r", "user1@example.com"},
+		},
+		{
+			name:            "multiple recipients comma-separated",
+			compressorTypes: []CompressorType{CompressorGPG},
+			gpgRecipient:    "user1@example.com,user2@example.com,user3@example.com",
+			expectedCmd:     []string{"gpg", "-e", "-r", "user1@example.com", "-r", "user2@example.com", "-r", "user3@example.com"},
+		},
+		{
+			name:            "multiple recipients with spaces",
+			compressorTypes: []CompressorType{CompressorGPG},
+			gpgRecipient:    "user1@example.com, user2@example.com",
+			expectedCmd:     []string{"gpg", "-e", "-r", "user1@example.com", "-r", "user2@example.com"},
+		},
+		{
+			name:            "empty recipients",
+			compressorTypes: []CompressorType{CompressorGPG},
+			gpgRecipient:    "",
+			expectedCmd:     nil, // Should skip GPG
+		},
+		{
+			name:            "recipients with empty entries",
+			compressorTypes: []CompressorType{CompressorGPG},
+			gpgRecipient:    "user1@example.com,,user2@example.com",
+			expectedCmd:     []string{"gpg", "-e", "-r", "user1@example.com", "-r", "user2@example.com"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pipeline := NewDefaultPipeline(tt.compressorTypes, tt.gpgRecipient)
+			assert.NotNil(t, pipeline)
+
+			if tt.expectedCmd != nil {
+				assert.Len(t, pipeline.configs, 1)
+				assert.Equal(t, CompressorGPG, pipeline.configs[0].Type)
+				assert.Equal(t, tt.expectedCmd, pipeline.configs[0].CompressCmd)
+				
+				// Check backwards compatibility
+				recipients := parseRecipients(tt.gpgRecipient)
+				if len(recipients) > 0 {
+					assert.Equal(t, recipients[0], pipeline.configs[0].GPGRecipient)
+					assert.Equal(t, recipients, pipeline.configs[0].GPGRecipients)
+				}
+			} else {
+				assert.Empty(t, pipeline.configs)
+			}
+		})
+	}
+}
+
+func TestParseRecipients(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name:     "empty string",
+			input:    "",
+			expected: nil,
+		},
+		{
+			name:     "single recipient",
+			input:    "user@example.com",
+			expected: []string{"user@example.com"},
+		},
+		{
+			name:     "multiple recipients",
+			input:    "user1@example.com,user2@example.com,user3@example.com",
+			expected: []string{"user1@example.com", "user2@example.com", "user3@example.com"},
+		},
+		{
+			name:     "recipients with spaces",
+			input:    "user1@example.com, user2@example.com, user3@example.com",
+			expected: []string{"user1@example.com", "user2@example.com", "user3@example.com"},
+		},
+		{
+			name:     "recipients with empty entries",
+			input:    "user1@example.com,,user2@example.com,",
+			expected: []string{"user1@example.com", "user2@example.com"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := parseRecipients(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
 	}
 }

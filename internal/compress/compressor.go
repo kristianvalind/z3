@@ -31,7 +31,19 @@ type CompressorConfig struct {
 	Type          CompressorType
 	CompressCmd   []string
 	DecompressCmd []string
-	GPGRecipient  string // Only used for GPG
+	GPGRecipient  string   // Only used for GPG - kept for backwards compatibility
+	GPGRecipients []string // Multiple GPG recipients support
+}
+
+// GetRecipients returns the GPG recipients, maintaining backwards compatibility
+func (c *CompressorConfig) GetRecipients() []string {
+	if len(c.GPGRecipients) > 0 {
+		return c.GPGRecipients
+	}
+	if c.GPGRecipient != "" {
+		return []string{c.GPGRecipient}
+	}
+	return nil
 }
 
 // Pipeline represents a compression/encryption pipeline
@@ -49,6 +61,13 @@ func NewPipeline(configs ...CompressorConfig) *Pipeline {
 
 // NewDefaultPipeline creates a pipeline with default configurations
 func NewDefaultPipeline(compressorTypes []CompressorType, gpgRecipient string) *Pipeline {
+	// Parse comma-separated recipients for backwards compatibility
+	recipients := parseRecipients(gpgRecipient)
+	return NewDefaultPipelineWithRecipients(compressorTypes, recipients)
+}
+
+// NewDefaultPipelineWithRecipients creates a pipeline with multiple GPG recipients
+func NewDefaultPipelineWithRecipients(compressorTypes []CompressorType, gpgRecipients []string) *Pipeline {
 	var configs []CompressorConfig
 
 	for _, compType := range compressorTypes {
@@ -66,15 +85,29 @@ func NewDefaultPipeline(compressorTypes []CompressorType, gpgRecipient string) *
 				DecompressCmd: []string{"pigz", "-d"},
 			})
 		case CompressorGPG:
-			if gpgRecipient == "" {
-				continue // Skip GPG if no recipient specified
+			if len(gpgRecipients) == 0 {
+				continue // Skip GPG if no recipients specified
 			}
-			configs = append(configs, CompressorConfig{
+			
+			// Build GPG command with multiple recipients
+			compressCmd := []string{"gpg", "-e"}
+			for _, recipient := range gpgRecipients {
+				compressCmd = append(compressCmd, "-r", recipient)
+			}
+			
+			config := CompressorConfig{
 				Type:          CompressorGPG,
-				CompressCmd:   []string{"gpg", "-e", "-r", gpgRecipient},
+				CompressCmd:   compressCmd,
 				DecompressCmd: []string{"gpg", "-d"},
-				GPGRecipient:  gpgRecipient,
-			})
+				GPGRecipients: gpgRecipients,
+			}
+			
+			// Set single recipient for backwards compatibility
+			if len(gpgRecipients) > 0 {
+				config.GPGRecipient = gpgRecipients[0]
+			}
+			
+			configs = append(configs, config)
 		case CompressorNone:
 			// No compression - skip
 			continue
@@ -201,8 +234,13 @@ func (p *Pipeline) GetMetadata() map[string]string {
 	var compressors []string
 	for _, config := range p.configs {
 		compressors = append(compressors, string(config.Type))
-		if config.Type == CompressorGPG && config.GPGRecipient != "" {
-			metadata["gpg_recipient"] = config.GPGRecipient
+		if config.Type == CompressorGPG {
+			recipients := config.GetRecipients()
+			if len(recipients) > 0 {
+				// Store both formats for backwards compatibility
+				metadata["gpg_recipient"] = recipients[0] // Old format - first recipient only
+				metadata["gpg_recipients"] = strings.Join(recipients, ",") // New format - all recipients
+			}
 		}
 	}
 
@@ -361,4 +399,21 @@ func IsCompressionAvailable(compType CompressorType) bool {
 	default:
 		return false
 	}
+}
+
+// parseRecipients parses a comma-separated string of GPG recipients
+func parseRecipients(recipients string) []string {
+	if recipients == "" {
+		return nil
+	}
+	
+	var result []string
+	for _, r := range strings.Split(recipients, ",") {
+		r = strings.TrimSpace(r)
+		if r != "" {
+			result = append(result, r)
+		}
+	}
+	
+	return result
 }

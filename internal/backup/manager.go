@@ -124,7 +124,7 @@ func NewManager(ctx context.Context, cfg *config.Config) (*Manager, error) {
 
 	// Create compression pipeline
 	compressorTypes := compress.ParseCompressorTypes(cfg.Compressor)
-	compressPipeline := compress.NewDefaultPipeline(compressorTypes, cfg.GPGRecipient)
+	compressPipeline := compress.NewDefaultPipeline(compressorTypes, cfg.GetGPGRecipients())
 
 	return &Manager{
 		config:           cfg,

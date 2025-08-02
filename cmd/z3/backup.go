@@ -53,7 +53,7 @@ func init() {
 	backupCmd.Flags().BoolVar(&full, "full", false, "perform full backup instead of incremental")
 	backupCmd.Flags().BoolVar(&incremental, "incremental", true, "perform incremental backup (default)")
 	backupCmd.Flags().StringVar(&compressor, "compressor", "", "compression method (pigz1, pigz4, gpg, none)")
-	backupCmd.Flags().StringVar(&gpgRecipient, "gpg-recipient", "", "GPG recipient for encryption")
+	backupCmd.Flags().StringVar(&gpgRecipient, "gpg-recipient", "", "GPG recipient(s) for encryption (comma-separated for multiple recipients)")
 	backupCmd.Flags().StringVar(&storageClass, "storage-class", "", "S3 storage class (STANDARD, STANDARD_IA, GLACIER, etc.)")
 	backupCmd.Flags().BoolVar(&parseable, "parseable", false, "machine-readable output")
 	backupCmd.Flags().BoolVar(&force, "force", false, "force backup even if snapshot already exists")

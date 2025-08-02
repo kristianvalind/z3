@@ -7,7 +7,8 @@
       "Bash(go mod:*)",
       "Bash(go run:*)",
       "Bash(go doc:*)",
-      "Bash(go build:*)"
+      "Bash(go build:*)",
+      "Bash(mv:*)"
     ],
     "deny": []
   }

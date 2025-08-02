@@ -42,8 +42,9 @@ type Config struct {
 	ChunkSize   string `mapstructure:"CHUNK_SIZE"`
 
 	// Compression Configuration
-	Compressor   string `mapstructure:"COMPRESSOR"`
-	GPGRecipient string `mapstructure:"GPG_RECIPIENT"`
+	Compressor    string `mapstructure:"COMPRESSOR"`
+	GPGRecipient  string `mapstructure:"GPG_RECIPIENT"`  // Single recipient for backwards compatibility
+	GPGRecipients string `mapstructure:"GPG_RECIPIENTS"` // Comma-separated list of recipients
 
 	// Per-filesystem configurations
 	FilesystemConfigs map[string]*FilesystemConfig `mapstructure:"-"`
@@ -106,7 +107,7 @@ func Load() (*Config, error) {
 	configKeys := []string{
 		"BUCKET", "S3_KEY_ID", "S3_SECRET", "S3_PREFIX", "HOST", "S3_STORAGE_CLASS",
 		"FILESYSTEM", "SNAPSHOT_PREFIX", "CONCURRENCY", "MAX_RETRIES", "CHUNK_SIZE",
-		"COMPRESSOR", "GPG_RECIPIENT",
+		"COMPRESSOR", "GPG_RECIPIENT", "GPG_RECIPIENTS",
 	}
 
 	for _, key := range configKeys {
@@ -256,6 +257,17 @@ func (c *Config) GetCompressor(filesystem string) string {
 		return fc.Compressor
 	}
 	return c.Compressor
+}
+
+// GetGPGRecipients returns the effective GPG recipients as a comma-separated string
+// It prioritizes GPGRecipients over GPGRecipient for backwards compatibility
+func (c *Config) GetGPGRecipients() string {
+	// If new format is specified, use it
+	if c.GPGRecipients != "" {
+		return c.GPGRecipients
+	}
+	// Fall back to single recipient for backwards compatibility
+	return c.GPGRecipient
 }
 
 // ParseChunkSize converts a chunk size string to bytes

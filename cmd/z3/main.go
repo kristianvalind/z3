@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/kristianvalind/z3/internal/backup"
 	"github.com/kristianvalind/z3/internal/config"
@@ -80,6 +81,18 @@ func loadConfig() (*config.Config, error) {
 	}
 	if bucket != "" {
 		cfg.Bucket = bucket
+	}
+	if gpgRecipient != "" {
+		// Override GPG recipients - use the new field for multiple recipients
+		cfg.GPGRecipients = gpgRecipient
+		// Also set single recipient for backwards compatibility
+		recipients := strings.Split(gpgRecipient, ",")
+		if len(recipients) > 0 {
+			cfg.GPGRecipient = strings.TrimSpace(recipients[0])
+		}
+	}
+	if compressor != "" {
+		cfg.Compressor = compressor
 	}
 
 	return cfg, nil
