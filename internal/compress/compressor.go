@@ -1,9 +1,11 @@
 package compress
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -140,6 +142,12 @@ func (p *Pipeline) Compress(ctx context.Context, writer io.Writer) (io.WriteClos
 		// Set up the command's output
 		cmd.Stdout = currentWriter
 
+		// For GPG, let it use the terminal for passphrase prompts
+		if config.Type == CompressorGPG {
+			cmd.Stderr = os.Stderr
+			cmd.Env = os.Environ()
+		}
+
 		// Create stdin pipe for this command
 		stdin, err := cmd.StdinPipe()
 		if err != nil {
@@ -183,6 +191,7 @@ func (p *Pipeline) Decompress(ctx context.Context, reader io.Reader) (io.ReadClo
 	// Create a pipeline of decompression commands in reverse order
 	var processes []*exec.Cmd
 	var pipes []io.ReadCloser
+	var stderrBufs []*bytes.Buffer
 
 	// Start from the beginning (input) and work forwards
 	currentReader := reader
@@ -192,6 +201,22 @@ func (p *Pipeline) Decompress(ctx context.Context, reader io.Reader) (io.ReadClo
 
 		// Set up the command's input
 		cmd.Stdin = currentReader
+
+		// For GPG, we need to handle stderr differently to allow passphrase prompts
+		stderrBuf := &bytes.Buffer{}
+		if config.Type == CompressorGPG {
+			// Let GPG use the terminal for passphrase prompts
+			// GPG will use /dev/tty directly for the passphrase
+			cmd.Stderr = os.Stderr
+			
+			// Just pass through the environment as-is
+			// The user should set GPG_TTY before running
+			cmd.Env = os.Environ()
+		} else {
+			// For other compressors, capture stderr
+			cmd.Stderr = stderrBuf
+		}
+		stderrBufs = append(stderrBufs, stderrBuf)
 
 		// Create stdout pipe for this command
 		stdout, err := cmd.StdoutPipe()
@@ -209,8 +234,9 @@ func (p *Pipeline) Decompress(ctx context.Context, reader io.Reader) (io.ReadClo
 			for _, pipe := range pipes {
 				pipe.Close()
 			}
-			return nil, fmt.Errorf("failed to start %s decompression command: %w", config.Type, err)
+			return nil, fmt.Errorf("failed to start %s decompression command: %w (stderr: %s)", config.Type, err, stderrBuf.String())
 		}
+		
 
 		processes = append(processes, cmd)
 		pipes = append(pipes, stdout)
@@ -221,6 +247,7 @@ func (p *Pipeline) Decompress(ctx context.Context, reader io.Reader) (io.ReadClo
 		reader:    pipes[len(pipes)-1], // Last pipe is where we read output
 		processes: processes,
 		pipes:     pipes,
+		stderrBufs: stderrBufs,
 	}, nil
 }
 
@@ -304,11 +331,12 @@ func (pw *pipelineWriter) Close() error {
 
 // pipelineReader handles reading through a decompression pipeline
 type pipelineReader struct {
-	reader    io.ReadCloser
-	processes []*exec.Cmd
-	pipes     []io.ReadCloser
-	closed    bool
-	mutex     sync.Mutex
+	reader       io.ReadCloser
+	processes    []*exec.Cmd
+	pipes        []io.ReadCloser
+	stderrBufs   []*bytes.Buffer
+	closed       bool
+	mutex        sync.Mutex
 }
 
 func (pr *pipelineReader) Read(p []byte) (n int, err error) {
@@ -341,7 +369,15 @@ func (pr *pipelineReader) Close() error {
 	var lastErr error
 	for i, process := range pr.processes {
 		if err := process.Wait(); err != nil {
-			lastErr = fmt.Errorf("decompression process %d failed: %w", i, err)
+			stderr := ""
+			if i < len(pr.stderrBufs) && pr.stderrBufs[i] != nil {
+				stderr = pr.stderrBufs[i].String()
+			}
+			if stderr != "" {
+				lastErr = fmt.Errorf("decompression process %d failed: %w (stderr: %s)", i, err, stderr)
+			} else {
+				lastErr = fmt.Errorf("decompression process %d failed: %w", i, err)
+			}
 		}
 	}
 

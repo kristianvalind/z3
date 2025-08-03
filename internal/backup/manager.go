@@ -61,6 +61,7 @@ type Manager struct {
 	compressPipeline *compress.Pipeline
 }
 
+
 // BackupOptions contains options for backup operations
 type BackupOptions struct {
 	DryRun          bool
@@ -400,7 +401,7 @@ func (m *Manager) Restore(ctx context.Context, opts *RestoreOptions) (*RestoreRe
 	m.zfsManager.SetDryRun(opts.DryRun)
 
 	// Get remote snapshots to find the one to restore
-	remoteSnapshots, err := m.s3Client.ListSnapshots(ctx, m.zfsManager.GetFilesystem())
+	remoteSnapshots, err := m.ListRemoteSnapshots(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list remote snapshots: %w", err)
 	}
@@ -418,7 +419,35 @@ func (m *Manager) Restore(ctx context.Context, opts *RestoreOptions) (*RestoreRe
 
 	// Restore snapshots in order
 	for _, snapToRestore := range restorationChain {
-		err := m.restoreSnapshot(ctx, snapToRestore, opts)
+		// For each snapshot in the chain, check if it needs to be restored
+		// We need to check locally each time as the list changes after each restore
+		localSnapshots, err := m.zfsManager.List(ctx)
+		if err != nil {
+			// If we can't list, assume we need to restore
+			localSnapshots = snapshot.SnapshotList{}
+		}
+		
+		// Check if snapshot already exists locally
+		// Also check for the nested structure that might have been created
+		exists := false
+		if localSnapshots.FindByName(snapToRestore.Name) != nil {
+			exists = true
+		}
+		
+		// Also check if it exists in a nested structure (e.g., zroot/home/kristian/home/kristian@snapshot)
+		for _, localSnap := range localSnapshots {
+			if strings.HasSuffix(localSnap.Name, "@"+strings.Split(snapToRestore.Name, "@")[1]) {
+				fmt.Printf("Snapshot %s already exists (found as %s), skipping\n", snapToRestore.Name, localSnap.Name)
+				exists = true
+				break
+			}
+		}
+		
+		if exists {
+			continue
+		}
+
+		err = m.restoreSnapshot(ctx, snapToRestore, opts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to restore snapshot %s: %w", snapToRestore.Name, err)
 		}
@@ -447,10 +476,77 @@ func (m *Manager) restoreSnapshot(ctx context.Context, snap *snapshot.Snapshot, 
 	if opts.DryRun {
 		return nil // Just simulate
 	}
+	
+	// Determine the target dataset
+	targetDataset := opts.TargetDataset
+	if targetDataset == "" {
+		targetDataset = m.zfsManager.GetFilesystem()
+	}
+	
+	// Check if the target filesystem exists
+	datasetExists := false
+	localSnaps, err := m.zfsManager.List(ctx)
+	if err == nil && len(localSnaps) > 0 {
+		// If we can list snapshots, the dataset exists
+		datasetExists = true
+	}
+	
+	// For existing filesystems with snapshots, we need special handling
+	if datasetExists && snap.IsFullBackup && !opts.Force {
+		// When restoring a full backup to an existing filesystem without force,
+		// we can't proceed as it would need to overwrite the filesystem
+		return fmt.Errorf("filesystem %s already exists with snapshots. Use --force to overwrite or restore to a different dataset", targetDataset)
+	}
+	
+	// Check if we need to handle existing filesystem
+	// For incremental snapshots, we should never use -F as it would destroy the parent snapshots
+	forceRestore := false
+	if snap.IsFullBackup && opts.Force {
+		// Only use force for full backups when explicitly requested
+		// This will rollback the filesystem to receive the full backup
+		forceRestore = true
+	}
+
+	// Get object metadata to determine compression type
+	objInfo, err := m.s3Client.HeadObject(ctx, s3Key)
+	if err != nil {
+		return fmt.Errorf("failed to get object metadata: %w", err)
+	}
+
+	// Create appropriate decompression pipeline based on metadata
+	var decompressPipeline *compress.Pipeline
+	if objInfo.Metadata != nil {
+		// Check both "compressor" and "compressors" for compatibility
+		compressorType := objInfo.Metadata["compressor"]
+		if compressorType == "" {
+			compressorType = objInfo.Metadata["compressors"]
+		}
+		
+		if compressorType != "" {
+			// Create a pipeline specific to this snapshot's compression
+			compressorTypes := compress.ParseCompressorTypes(compressorType)
+			gpgRecipients := m.config.GetGPGRecipients()
+			
+			// Check if snapshot has specific GPG recipient(s) in metadata
+			if recipients, ok := objInfo.Metadata["gpg_recipients"]; ok && recipients != "" {
+				gpgRecipients = recipients
+			} else if recipient, ok := objInfo.Metadata["gpg_recipient"]; ok && recipient != "" {
+				gpgRecipients = recipient
+			}
+			
+			decompressPipeline = compress.NewDefaultPipeline(compressorTypes, gpgRecipients)
+		} else {
+			// No compression
+			decompressPipeline = compress.NewDefaultPipeline([]compress.CompressorType{}, "")
+		}
+	} else {
+		// No metadata, try default pipeline
+		decompressPipeline = m.compressPipeline
+	}
 
 	// Create decompression pipeline
 	reader, writer := io.Pipe()
-	decompressedReader, err := m.compressPipeline.Decompress(ctx, reader)
+	decompressedReader, err := decompressPipeline.Decompress(ctx, reader)
 	if err != nil {
 		reader.Close()
 		writer.Close()
@@ -459,25 +555,52 @@ func (m *Manager) restoreSnapshot(ctx context.Context, snap *snapshot.Snapshot, 
 
 	// Start S3 download in a goroutine
 	var s3DownloadErr error
+	downloadDone := make(chan struct{})
 	go func() {
 		defer writer.Close()
+		defer close(downloadDone)
+		
 		s3DownloadErr = m.s3Client.GetObject(ctx, s3Key, writer)
 	}()
 
+	// Debug: Log what we're about to restore
+	fmt.Printf("Restoring snapshot: %s\n", snap.Name)
+	fmt.Printf("Target dataset: %s\n", targetDataset)
+	fmt.Printf("Is full backup: %v\n", snap.IsFullBackup)
+	fmt.Printf("Using force: %v\n", forceRestore)
+	
 	// Receive the decompressed stream
 	receiveOpts := snapshot.ReceiveOptions{
-		Dataset: opts.TargetDataset,
+		Dataset: targetDataset,
 		DryRun:  opts.DryRun,
-		Force:   opts.Force,
+		Force:   forceRestore,
 	}
 
-	err = m.zfsManager.Receive(ctx, decompressedReader, receiveOpts)
+	// Add a timeout to detect hanging decompression
+	recvCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
+	err = m.zfsManager.Receive(recvCtx, decompressedReader, receiveOpts)
 	if err != nil {
 		reader.Close()
 		decompressedReader.Close()
+		
+		// Wait for download to complete to get any S3 errors
+		select {
+		case <-downloadDone:
+			if s3DownloadErr != nil {
+				return fmt.Errorf("S3 download failed: %w, ZFS receive also failed: %w", s3DownloadErr, err)
+			}
+		case <-time.After(5 * time.Second):
+			// Don't wait too long
+		}
+		
 		return fmt.Errorf("ZFS receive failed: %w", err)
 	}
 
+	// Wait for download to complete
+	<-downloadDone
+	
 	// Check for S3 download errors
 	if s3DownloadErr != nil {
 		return fmt.Errorf("S3 download failed: %w", s3DownloadErr)
@@ -513,9 +636,17 @@ func (m *Manager) buildSnapshotMetadata(snap *snapshot.Snapshot, isFullBackup bo
 		metadata["parent"] = parentName
 	}
 
-	// Compression metadata
-	for k, v := range m.compressPipeline.GetMetadata() {
-		metadata[k] = v
+	// Compression metadata - write both for compatibility
+	compMeta := m.compressPipeline.GetMetadata()
+	if compType, ok := compMeta["compressor"]; ok {
+		metadata["compressor"] = compType  // Python Z3 expects this
+		metadata["compressors"] = compType  // Our format
+	}
+	// Also include other compression metadata
+	for k, v := range compMeta {
+		if k != "compressor" {  // Don't duplicate
+			metadata[k] = v
+		}
 	}
 
 	// Additional metadata

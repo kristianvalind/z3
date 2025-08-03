@@ -215,13 +215,18 @@ func (m *Manager) Receive(ctx context.Context, reader io.Reader, options snapsho
 		DryRun:           options.DryRun,
 		Verbose:          true,
 		Force:            options.Force,
-		DiscardFirstName: true, // Usually want this for backup restoration
+		DiscardFirstName: false, // Don't use -d when restoring to same filesystem
 		Timeout:          30 * time.Minute,
 	}
 
 	// If no dataset specified, use the configured filesystem
 	if recvOpts.Dataset == "" {
 		recvOpts.Dataset = m.filesystemName
+	}
+	
+	// If we're restoring to a different dataset, use -d to discard the first name
+	if options.Dataset != "" && options.Dataset != m.filesystemName {
+		recvOpts.DiscardFirstName = true
 	}
 
 	result, err := m.executor.Receive(ctx, recvOpts)
