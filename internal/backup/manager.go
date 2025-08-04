@@ -423,23 +423,25 @@ func (m *Manager) Restore(ctx context.Context, opts *RestoreOptions) (*RestoreRe
 	for _, snapToRestore := range restorationChain {
 		// For each snapshot in the chain, check if it needs to be restored
 		// We need to check locally each time as the list changes after each restore
-		localSnapshots, err := m.zfsManager.List(ctx)
+
+		// Determine the target dataset for this restore operation
+		targetDataset := opts.TargetDataset
+		if targetDataset == "" {
+			targetDataset = m.zfsManager.GetFilesystem()
+		}
+
+		// List snapshots on the *target* dataset to see what's already there
+		localSnapshots, err := m.zfsManager.ListSnapshotsForDataset(ctx, targetDataset)
 		if err != nil {
-			// If we can't list, assume we need to restore
-			localSnapshots = snapshot.SnapshotList{}
+			return nil, fmt.Errorf("failed to list snapshots on target dataset %s: %w", targetDataset, err)
 		}
 
-		// Check if snapshot already exists locally
-		// Also check for the nested structure that might have been created
+		// Check if a snapshot with the same name (the part after @) already exists
 		exists := false
-		if localSnapshots.FindByName(snapToRestore.Name) != nil {
-			exists = true
-		}
-
-		// Also check if it exists in a nested structure (e.g., zroot/home/kristian/home/kristian@snapshot)
+		snapNameOnly := strings.Split(snapToRestore.Name, "@")[1]
 		for _, localSnap := range localSnapshots {
-			if strings.HasSuffix(localSnap.Name, "@"+strings.Split(snapToRestore.Name, "@")[1]) {
-				fmt.Printf("Snapshot %s already exists (found as %s), skipping\n", snapToRestore.Name, localSnap.Name)
+			if strings.HasSuffix(localSnap.Name, "@"+snapNameOnly) {
+				fmt.Printf("Snapshot %s already exists on target (found as %s), skipping\n", snapToRestore.Name, localSnap.Name)
 				exists = true
 				break
 			}

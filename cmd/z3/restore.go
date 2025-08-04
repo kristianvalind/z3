@@ -54,10 +54,11 @@ Examples:
 			if len(args) != 0 {
 				return fmt.Errorf("snapshot name cannot be specified with --all-snapshots, --latest, or --until")
 			}
-		} else {
-			if len(args) != 1 {
-				return fmt.Errorf("snapshot name is required unless using --all-snapshots, --latest, or --until")
-			}
+		} else if len(args) == 0 {
+			// No snapshot name provided, and no special flags used
+			return fmt.Errorf("snapshot name is required unless using --all-snapshots, --latest, or --until")
+		} else if len(args) > 1 {
+			return fmt.Errorf("too many arguments, please specify only one snapshot name")
 		}
 		return nil
 	},
@@ -245,11 +246,14 @@ func runRestoreAllSnapshots(ctx context.Context, manager *backup.Manager) error 
 
 		// Create options for this specific snapshot
 		// IMPORTANT: We must set the correct snapshot name for each iteration
+		// Apply force only to the first snapshot in the chain
+		applyForce := forceRestore && i == 0
+
 		snapOpts := &backup.RestoreOptions{
 			TargetDataset: targetDataset,
 			SnapshotName:  snap.Name, // Use the current snapshot's name, not the original
 			DryRun:        dryRun,
-			Force:         forceRestore,
+			Force:         applyForce,
 		}
 
 		// Perform restore

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/kristianvalind/z3/internal/config"
@@ -364,4 +365,42 @@ func (m *Manager) GetSnapshotsToSend(ctx context.Context, remoteSnapshots snapsh
 	}
 
 	return toSend, nil
+}
+
+// ListSnapshotsForDataset returns all snapshots for a specific dataset
+func (m *Manager) ListSnapshotsForDataset(ctx context.Context, datasetName string) (snapshot.SnapshotList, error) {
+	// Execute zfs list command for the given dataset
+	listOpts := ListOptions{
+		Type:       "snapshot",
+		Properties: []string{"name", "used", "refer", "mountpoint", "written"},
+		Recursive:  true,
+		Parseable:  true,
+		Dataset:    datasetName,
+		Timeout:    30 * time.Second,
+	}
+
+	result, err := m.executor.List(ctx, listOpts)
+	if err != nil {
+		// If the dataset does not exist, ZFS returns a non-zero exit code
+		// with a specific error message. We should treat this as an empty list.
+		if strings.Contains(result.Stderr, "does not exist") {
+			return snapshot.SnapshotList{}, nil
+		}
+		return nil, fmt.Errorf("failed to list snapshots for dataset %s: %w", datasetName, err)
+	}
+
+	// Create a new parser for this specific dataset
+	parser := NewSnapshotParser(datasetName, "") // No prefix filtering for this
+
+	// Parse the output
+	snapshots, err := parser.ParseSnapshotList(result.Stdout)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse snapshot list for dataset %s: %w", datasetName, err)
+	}
+
+	// Convert to SnapshotList and sort
+	snapshotList := snapshot.SnapshotList(snapshots)
+	sort.Sort(snapshotList)
+
+	return snapshotList, nil
 }
