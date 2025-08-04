@@ -100,7 +100,7 @@ func NewDefaultPipelineWithRecipients(compressorTypes []CompressorType, gpgRecip
 			config := CompressorConfig{
 				Type:          CompressorGPG,
 				CompressCmd:   compressCmd,
-				DecompressCmd: []string{"gpg", "-d"},
+				DecompressCmd: []string{"gpg", "--quiet", "--use-agent", "-d"},
 				GPGRecipients: gpgRecipients,
 			}
 
@@ -205,12 +205,8 @@ func (p *Pipeline) Decompress(ctx context.Context, reader io.Reader) (io.ReadClo
 		// For GPG, we need to handle stderr differently to allow passphrase prompts
 		stderrBuf := &bytes.Buffer{}
 		if config.Type == CompressorGPG {
-			// Let GPG use the terminal for passphrase prompts
-			// GPG will use /dev/tty directly for the passphrase
+			// Let GPG use stderr for prompts and errors
 			cmd.Stderr = os.Stderr
-			
-			// Just pass through the environment as-is
-			// The user should set GPG_TTY before running
 			cmd.Env = os.Environ()
 		} else {
 			// For other compressors, capture stderr
@@ -236,7 +232,6 @@ func (p *Pipeline) Decompress(ctx context.Context, reader io.Reader) (io.ReadClo
 			}
 			return nil, fmt.Errorf("failed to start %s decompression command: %w (stderr: %s)", config.Type, err, stderrBuf.String())
 		}
-		
 
 		processes = append(processes, cmd)
 		pipes = append(pipes, stdout)
@@ -244,9 +239,9 @@ func (p *Pipeline) Decompress(ctx context.Context, reader io.Reader) (io.ReadClo
 	}
 
 	return &pipelineReader{
-		reader:    pipes[len(pipes)-1], // Last pipe is where we read output
-		processes: processes,
-		pipes:     pipes,
+		reader:     pipes[len(pipes)-1], // Last pipe is where we read output
+		processes:  processes,
+		pipes:      pipes,
 		stderrBufs: stderrBufs,
 	}, nil
 }
@@ -331,12 +326,12 @@ func (pw *pipelineWriter) Close() error {
 
 // pipelineReader handles reading through a decompression pipeline
 type pipelineReader struct {
-	reader       io.ReadCloser
-	processes    []*exec.Cmd
-	pipes        []io.ReadCloser
-	stderrBufs   []*bytes.Buffer
-	closed       bool
-	mutex        sync.Mutex
+	reader     io.ReadCloser
+	processes  []*exec.Cmd
+	pipes      []io.ReadCloser
+	stderrBufs []*bytes.Buffer
+	closed     bool
+	mutex      sync.Mutex
 }
 
 func (pr *pipelineReader) Read(p []byte) (n int, err error) {

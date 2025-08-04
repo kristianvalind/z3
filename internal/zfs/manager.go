@@ -223,7 +223,7 @@ func (m *Manager) Receive(ctx context.Context, reader io.Reader, options snapsho
 	if recvOpts.Dataset == "" {
 		recvOpts.Dataset = m.filesystemName
 	}
-	
+
 	// If we're restoring to a different dataset, use -d to discard the first name
 	if options.Dataset != "" && options.Dataset != m.filesystemName {
 		recvOpts.DiscardFirstName = true

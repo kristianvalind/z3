@@ -70,7 +70,7 @@ func init() {
 	restoreCmd.Flags().BoolVar(&restoreAllSnapshots, "all-snapshots", false, "restore all snapshots from S3")
 	restoreCmd.Flags().BoolVar(&latestSnapshot, "latest", false, "restore only the latest snapshot")
 	restoreCmd.Flags().StringVar(&untilSnapshot, "until", "", "restore all snapshots up to and including this one")
-	
+
 	// Make these flags mutually exclusive
 	restoreCmd.MarkFlagsMutuallyExclusive("all-snapshots", "latest", "until")
 }
@@ -183,7 +183,7 @@ func runRestoreAllSnapshots(ctx context.Context, manager *backup.Manager) error 
 
 	// Filter snapshots based on mode
 	var toRestore []*snapshot.Snapshot
-	
+
 	if latestSnapshot {
 		// Only restore the latest snapshot
 		latest := remoteSnaps[len(remoteSnaps)-1]
@@ -244,15 +244,16 @@ func runRestoreAllSnapshots(ctx context.Context, manager *backup.Manager) error 
 		fmt.Printf("\n=== Restoring snapshot %d/%d: %s ===\n", i+1, len(toRestore), snap.Name)
 
 		// Create options for this specific snapshot
-		opts := &backup.RestoreOptions{
+		// IMPORTANT: We must set the correct snapshot name for each iteration
+		snapOpts := &backup.RestoreOptions{
 			TargetDataset: targetDataset,
-			SnapshotName:  snap.Name,
+			SnapshotName:  snap.Name, // Use the current snapshot's name, not the original
 			DryRun:        dryRun,
 			Force:         forceRestore,
 		}
 
 		// Perform restore
-		result, err := manager.Restore(ctx, opts)
+		result, err := manager.Restore(ctx, snapOpts)
 		if err != nil {
 			errorCount++
 			fmt.Printf("ERROR: Failed to restore %s: %v\n", snap.Name, err)

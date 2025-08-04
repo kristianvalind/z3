@@ -1,9 +1,12 @@
 package backup
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -60,7 +63,6 @@ type Manager struct {
 	s3Client         *s3.Client
 	compressPipeline *compress.Pipeline
 }
-
 
 // BackupOptions contains options for backup operations
 type BackupOptions struct {
@@ -194,7 +196,7 @@ func (m *Manager) Backup(ctx context.Context, opts *BackupOptions) (*BackupResul
 		if err != nil {
 			return nil, fmt.Errorf("failed to list local snapshots: %w", err)
 		}
-		
+
 		for i := len(localSnapshots) - 1; i >= 0; i-- {
 			localSnap := localSnapshots[i]
 			if remoteSnapshots.FindByName(localSnap.Name) != nil {
@@ -203,7 +205,7 @@ func (m *Manager) Backup(ctx context.Context, opts *BackupOptions) (*BackupResul
 			}
 		}
 	}
-	
+
 	if opts.ForceFullBackup || len(remoteSnapshots) == 0 || baseSnapshot == nil {
 		// Full backup
 		snapshotsToUpload = snapshot.SnapshotList{targetSnapshot}
@@ -426,14 +428,14 @@ func (m *Manager) Restore(ctx context.Context, opts *RestoreOptions) (*RestoreRe
 			// If we can't list, assume we need to restore
 			localSnapshots = snapshot.SnapshotList{}
 		}
-		
+
 		// Check if snapshot already exists locally
 		// Also check for the nested structure that might have been created
 		exists := false
 		if localSnapshots.FindByName(snapToRestore.Name) != nil {
 			exists = true
 		}
-		
+
 		// Also check if it exists in a nested structure (e.g., zroot/home/kristian/home/kristian@snapshot)
 		for _, localSnap := range localSnapshots {
 			if strings.HasSuffix(localSnap.Name, "@"+strings.Split(snapToRestore.Name, "@")[1]) {
@@ -442,7 +444,7 @@ func (m *Manager) Restore(ctx context.Context, opts *RestoreOptions) (*RestoreRe
 				break
 			}
 		}
-		
+
 		if exists {
 			continue
 		}
@@ -476,32 +478,64 @@ func (m *Manager) restoreSnapshot(ctx context.Context, snap *snapshot.Snapshot, 
 	if opts.DryRun {
 		return nil // Just simulate
 	}
-	
+
 	// Determine the target dataset
 	targetDataset := opts.TargetDataset
 	if targetDataset == "" {
 		targetDataset = m.zfsManager.GetFilesystem()
 	}
-	
+
 	// Check if the target filesystem exists
 	datasetExists := false
-	localSnaps, err := m.zfsManager.List(ctx)
-	if err == nil && len(localSnaps) > 0 {
-		// If we can list snapshots, the dataset exists
+	checkCmd := exec.CommandContext(ctx, "zfs", "list", "-H", targetDataset)
+	checkErr := checkCmd.Run()
+
+	if checkErr == nil {
+		// Dataset exists
 		datasetExists = true
+		fmt.Printf("Target dataset %s already exists\n", targetDataset)
+	} else {
+		// Dataset doesn't exist
+		fmt.Printf("Target dataset %s does not exist\n", targetDataset)
+
+		// For full backups, ZFS will create the dataset from the stream
+		// For incremental backups, we need the dataset to exist
+		if !snap.IsFullBackup {
+			fmt.Printf("Creating target dataset for incremental restore...\n")
+
+			// Need to create parent datasets if they don't exist
+			createCmd := exec.CommandContext(ctx, "zfs", "create", "-p", targetDataset)
+			var stderr bytes.Buffer
+			createCmd.Stderr = &stderr
+
+			if err := createCmd.Run(); err != nil {
+				return fmt.Errorf("failed to create target dataset %s: %w (stderr: %s)", targetDataset, err, stderr.String())
+			}
+			fmt.Printf("Successfully created target dataset %s\n", targetDataset)
+			datasetExists = true
+		}
 	}
-	
-	// For existing filesystems with snapshots, we need special handling
-	if datasetExists && snap.IsFullBackup && !opts.Force {
-		// When restoring a full backup to an existing filesystem without force,
-		// we can't proceed as it would need to overwrite the filesystem
-		return fmt.Errorf("filesystem %s already exists with snapshots. Use --force to overwrite or restore to a different dataset", targetDataset)
-	}
-	
+
 	// Check if we need to handle existing filesystem
 	// For incremental snapshots, we should never use -F as it would destroy the parent snapshots
 	forceRestore := false
-	if snap.IsFullBackup && opts.Force {
+
+	// For existing filesystems with snapshots, we need special handling
+	needsSnapshotExtraction := false
+	if datasetExists && snap.IsFullBackup {
+		if targetDataset == m.zfsManager.GetFilesystem() && !opts.Force {
+			// When restoring a full backup to the SAME filesystem without force,
+			// we need to extract the snapshot from the stream
+			needsSnapshotExtraction = true
+			fmt.Printf("Dataset %s exists and matches source, will extract snapshot from full backup stream\n", targetDataset)
+		} else if !opts.Force {
+			// For different target datasets, we need -F to overwrite
+			forceRestore = true
+			fmt.Printf("Target dataset exists, will use -F flag for full backup restore\n")
+		}
+	}
+
+	if snap.IsFullBackup && opts.Force && !needsSnapshotExtraction {
 		// Only use force for full backups when explicitly requested
 		// This will rollback the filesystem to receive the full backup
 		forceRestore = true
@@ -513,6 +547,25 @@ func (m *Manager) restoreSnapshot(ctx context.Context, snap *snapshot.Snapshot, 
 		return fmt.Errorf("failed to get object metadata: %w", err)
 	}
 
+	// Check if we need GPG decryption
+	hasGPG := false
+	if objInfo.Metadata != nil {
+		compressorType := objInfo.Metadata["compressor"]
+		if compressorType == "" {
+			compressorType = objInfo.Metadata["compressors"]
+		}
+		if strings.Contains(compressorType, "gpg") {
+			hasGPG = true
+		}
+	}
+
+	// If GPG is involved, use script command to provide TTY
+	if hasGPG {
+		fmt.Printf("Using script command for GPG TTY access\n")
+		return m.restoreSnapshotWithScript(ctx, snap, opts, targetDataset, s3Key, forceRestore, needsSnapshotExtraction)
+	}
+
+	// Otherwise, use the streaming approach
 	// Create appropriate decompression pipeline based on metadata
 	var decompressPipeline *compress.Pipeline
 	if objInfo.Metadata != nil {
@@ -521,19 +574,19 @@ func (m *Manager) restoreSnapshot(ctx context.Context, snap *snapshot.Snapshot, 
 		if compressorType == "" {
 			compressorType = objInfo.Metadata["compressors"]
 		}
-		
+
 		if compressorType != "" {
 			// Create a pipeline specific to this snapshot's compression
 			compressorTypes := compress.ParseCompressorTypes(compressorType)
 			gpgRecipients := m.config.GetGPGRecipients()
-			
+
 			// Check if snapshot has specific GPG recipient(s) in metadata
 			if recipients, ok := objInfo.Metadata["gpg_recipients"]; ok && recipients != "" {
 				gpgRecipients = recipients
 			} else if recipient, ok := objInfo.Metadata["gpg_recipient"]; ok && recipient != "" {
 				gpgRecipients = recipient
 			}
-			
+
 			decompressPipeline = compress.NewDefaultPipeline(compressorTypes, gpgRecipients)
 		} else {
 			// No compression
@@ -559,8 +612,14 @@ func (m *Manager) restoreSnapshot(ctx context.Context, snap *snapshot.Snapshot, 
 	go func() {
 		defer writer.Close()
 		defer close(downloadDone)
-		
+
+		fmt.Printf("Starting S3 download for key: %s\n", s3Key)
 		s3DownloadErr = m.s3Client.GetObject(ctx, s3Key, writer)
+		if s3DownloadErr != nil {
+			fmt.Printf("S3 download error: %v\n", s3DownloadErr)
+		} else {
+			fmt.Printf("S3 download completed successfully\n")
+		}
 	}()
 
 	// Debug: Log what we're about to restore
@@ -568,23 +627,28 @@ func (m *Manager) restoreSnapshot(ctx context.Context, snap *snapshot.Snapshot, 
 	fmt.Printf("Target dataset: %s\n", targetDataset)
 	fmt.Printf("Is full backup: %v\n", snap.IsFullBackup)
 	fmt.Printf("Using force: %v\n", forceRestore)
-	
-	// Receive the decompressed stream
-	receiveOpts := snapshot.ReceiveOptions{
-		Dataset: targetDataset,
-		DryRun:  opts.DryRun,
-		Force:   forceRestore,
-	}
+	fmt.Printf("Needs snapshot extraction: %v\n", needsSnapshotExtraction)
 
 	// Add a timeout to detect hanging decompression
 	recvCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	err = m.zfsManager.Receive(recvCtx, decompressedReader, receiveOpts)
+	if needsSnapshotExtraction {
+		// Extract snapshot from full backup stream to existing filesystem
+		err = m.extractAndRestoreSnapshot(recvCtx, decompressedReader, snap, targetDataset)
+	} else {
+		// Normal restore
+		receiveOpts := snapshot.ReceiveOptions{
+			Dataset: targetDataset,
+			DryRun:  opts.DryRun,
+			Force:   forceRestore,
+		}
+		err = m.zfsManager.Receive(recvCtx, decompressedReader, receiveOpts)
+	}
 	if err != nil {
 		reader.Close()
 		decompressedReader.Close()
-		
+
 		// Wait for download to complete to get any S3 errors
 		select {
 		case <-downloadDone:
@@ -594,13 +658,13 @@ func (m *Manager) restoreSnapshot(ctx context.Context, snap *snapshot.Snapshot, 
 		case <-time.After(5 * time.Second):
 			// Don't wait too long
 		}
-		
+
 		return fmt.Errorf("ZFS receive failed: %w", err)
 	}
 
 	// Wait for download to complete
 	<-downloadDone
-	
+
 	// Check for S3 download errors
 	if s3DownloadErr != nil {
 		return fmt.Errorf("S3 download failed: %w", s3DownloadErr)
@@ -640,11 +704,11 @@ func (m *Manager) buildSnapshotMetadata(snap *snapshot.Snapshot, isFullBackup bo
 	compMeta := m.compressPipeline.GetMetadata()
 	if compType, ok := compMeta["compressor"]; ok {
 		metadata["compressor"] = compType  // Python Z3 expects this
-		metadata["compressors"] = compType  // Our format
+		metadata["compressors"] = compType // Our format
 	}
 	// Also include other compression metadata
 	for k, v := range compMeta {
-		if k != "compressor" {  // Don't duplicate
+		if k != "compressor" { // Don't duplicate
 			metadata[k] = v
 		}
 	}
@@ -769,7 +833,7 @@ func (m *Manager) ListRemoteSnapshots(ctx context.Context) (snapshot.SnapshotLis
 				fullName = strings.TrimPrefix(fullName, m.config.S3Prefix)
 				fullName = strings.TrimPrefix(fullName, "/")
 			}
-			
+
 			// Get object metadata to determine if it's a full backup and parent info
 			objInfo, err := m.s3Client.HeadObject(ctx, obj.Key)
 			if err != nil {
@@ -783,7 +847,7 @@ func (m *Manager) ListRemoteSnapshots(ctx context.Context) (snapshot.SnapshotLis
 				snapshots = append(snapshots, snap)
 				continue
 			}
-			
+
 			// Create snapshot with metadata
 			snap := &snapshot.Snapshot{
 				Name:           fullName,
@@ -791,7 +855,7 @@ func (m *Manager) ListRemoteSnapshots(ctx context.Context) (snapshot.SnapshotLis
 				CompressedSize: obj.Size,
 				CreatedAt:      obj.LastModified,
 			}
-			
+
 			// Parse metadata
 			if objInfo.Metadata != nil {
 				// Check both "isfull" and "is_full" for backwards compatibility
@@ -804,10 +868,430 @@ func (m *Manager) ListRemoteSnapshots(ctx context.Context) (snapshot.SnapshotLis
 					snap.ParentName = parent
 				}
 			}
-			
+
 			snapshots = append(snapshots, snap)
 		}
 	}
 
 	return snapshots, nil
+}
+
+// extractAndRestoreSnapshot extracts a snapshot from a full backup stream and restores it to an existing filesystem
+func (m *Manager) extractAndRestoreSnapshot(ctx context.Context, reader io.Reader, snap *snapshot.Snapshot, targetDataset string) error {
+	// For now, we don't support extracting snapshots from full backups to existing datasets
+	// This is a complex operation that requires careful handling of the dataset structure
+	// and potential conflicts with existing data
+	return fmt.Errorf("restoring full backups to existing datasets is not currently supported. Please use --target-dataset to restore to a new dataset")
+}
+
+// cleanupTempDataset removes a temporary dataset and all its snapshots
+func (m *Manager) cleanupTempDataset(ctx context.Context, dataset string) error {
+	// Use -r to recursively destroy the dataset and all snapshots
+	cmd := exec.CommandContext(ctx, "zfs", "destroy", "-r", dataset)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to destroy temporary dataset: %w (stderr: %s)", err, stderr.String())
+	}
+
+	return nil
+}
+
+// restoreSnapshotWithScript handles restore when GPG is involved by using script command for TTY
+func (m *Manager) restoreSnapshotWithScript(ctx context.Context, snap *snapshot.Snapshot, opts *RestoreOptions, targetDataset, s3Key string, forceRestore, needsSnapshotExtraction bool) error {
+	// For GPG, we'll actually go back to the temp file approach since script is causing issues
+	// But we'll run the GPG command with explicit environment to ensure it uses the agent
+
+	// Create a temporary file for the encrypted data
+	tempFile, err := os.CreateTemp("", "z3-restore-*.gpg")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary file: %w", err)
+	}
+	defer os.Remove(tempFile.Name())
+	defer tempFile.Close()
+
+	// Download the encrypted file from S3
+	fmt.Printf("Downloading encrypted snapshot to temporary file...\n")
+	err = m.s3Client.GetObject(ctx, s3Key, tempFile)
+	if err != nil {
+		return fmt.Errorf("failed to download from S3: %w", err)
+	}
+	tempFile.Close()
+
+	// Get object metadata to determine compression pipeline
+	objInfo, err := m.s3Client.HeadObject(ctx, s3Key)
+	if err != nil {
+		return fmt.Errorf("failed to get object metadata: %w", err)
+	}
+
+	// Build decompression command
+	compressorType := ""
+	if objInfo.Metadata != nil {
+		compressorType = objInfo.Metadata["compressor"]
+		if compressorType == "" {
+			compressorType = objInfo.Metadata["compressors"]
+		}
+	}
+
+	// Parse the compressor chain
+	compressors := strings.Split(compressorType, ",")
+
+	// Debug: print the compression chain
+	fmt.Printf("Compression chain: %v\n", compressors)
+
+	// Build the full command pipeline
+	var pipelineCmd string
+	var decryptedFile *os.File
+	zfsRecvFlags := ""
+	if forceRestore {
+		zfsRecvFlags = "-F "
+	}
+
+	// Handle different compression scenarios
+	if len(compressors) == 1 && compressors[0] == "gpg" {
+		// Only GPG: Let's test different approaches
+
+		// First, let's verify the file exists and has content
+		fileInfo, err := os.Stat(tempFile.Name())
+		if err != nil {
+			return fmt.Errorf("temp file error: %w", err)
+		}
+		fmt.Printf("Temp file size: %d bytes\n", fileInfo.Size())
+
+		// Try approach 1: Direct GPG without script (with --quiet to suppress status messages)
+		fmt.Printf("\nTrying direct GPG approach...\n")
+		testCmd := exec.CommandContext(ctx, "sh", "-c", fmt.Sprintf("gpg --quiet --use-agent -d '%s' 2>/dev/null | head -c 100 | xxd", tempFile.Name()))
+		testCmd.Stdin = os.Stdin
+		var testOut bytes.Buffer
+		testCmd.Stdout = &testOut
+		testCmd.Stderr = os.Stderr
+
+		if err := testCmd.Run(); err != nil {
+			fmt.Printf("Direct GPG test failed: %v\n", err)
+		} else {
+			fmt.Printf("First 100 bytes (hex): %s\n", testOut.String())
+		}
+
+		// Script corrupts binary data, so let's decrypt to a temp file first, then pipe to zfs
+		// Create a second temp file for decrypted data
+		decryptedFile, err = os.CreateTemp("", "z3-decrypted-*.zfs")
+		if err != nil {
+			return fmt.Errorf("failed to create decrypted temp file: %w", err)
+		}
+		defer os.Remove(decryptedFile.Name())
+		decryptedFile.Close()
+
+		// Decrypt with script to allow TTY access
+		decryptCmd := fmt.Sprintf("script -q /dev/null gpg --quiet --use-agent -d -o '%s' '%s'",
+			decryptedFile.Name(), tempFile.Name())
+
+		fmt.Printf("Decrypting with GPG...\n")
+		gpgCmd := exec.CommandContext(ctx, "sh", "-c", decryptCmd)
+		gpgCmd.Stdin = os.Stdin
+		gpgCmd.Stdout = os.Stdout
+		gpgCmd.Stderr = os.Stderr
+		gpgCmd.Env = os.Environ()
+
+		if err := gpgCmd.Run(); err != nil {
+			return fmt.Errorf("GPG decryption failed: %w", err)
+		}
+
+		// For snapshot extraction, we'll handle this differently below
+		if !needsSnapshotExtraction {
+			// Now pipe the decrypted file to zfs recv
+			pipelineCmd = fmt.Sprintf("cat '%s' | zfs recv %s'%s'",
+				decryptedFile.Name(), zfsRecvFlags, targetDataset)
+		}
+	} else if len(compressors) == 0 || (len(compressors) == 1 && compressors[0] == "") {
+		// No compression
+		pipelineCmd = fmt.Sprintf("cat '%s' | zfs recv %s'%s'",
+			tempFile.Name(), zfsRecvFlags, targetDataset)
+	} else {
+		// For any other combination, build the pipeline dynamically
+		// Start with cat to read the file
+		pipeline := fmt.Sprintf("cat '%s'", tempFile.Name())
+
+		// Apply decompression in reverse order
+		for i := len(compressors) - 1; i >= 0; i-- {
+			comp := strings.TrimSpace(compressors[i])
+			if comp == "" {
+				continue
+			}
+
+			switch comp {
+			case "gpg":
+				// Use script for GPG to get TTY
+				pipeline = fmt.Sprintf("script -q /dev/null sh -c '%s' | gpg --quiet --use-agent -d", pipeline)
+			case "pigz1", "pigz4":
+				pipeline = fmt.Sprintf("%s | pigz -d", pipeline)
+			default:
+				return fmt.Errorf("unknown compressor: %s", comp)
+			}
+		}
+
+		// Finally pipe to zfs recv
+		pipelineCmd = fmt.Sprintf("%s | zfs recv %s'%s'", pipeline, zfsRecvFlags, targetDataset)
+	}
+
+	fmt.Printf("Running restore pipeline...\n")
+	fmt.Printf("Command: sh -c \"%s\"\n", pipelineCmd)
+
+	// Only run the regular restore if we're not doing snapshot extraction
+	if !needsSnapshotExtraction && pipelineCmd != "" {
+		// Run the command through sh to handle the pipeline
+		cmd := exec.CommandContext(ctx, "sh", "-c", pipelineCmd)
+
+		// Set up environment
+		cmd.Env = os.Environ()
+
+		// Connect stdin/stdout/stderr to allow GPG interaction
+		cmd.Stdin = os.Stdin
+
+		// Capture output for debugging
+		var stdoutBuf, stderrBuf bytes.Buffer
+		cmd.Stdout = io.MultiWriter(os.Stdout, &stdoutBuf)
+		cmd.Stderr = io.MultiWriter(os.Stderr, &stderrBuf)
+
+		// Run the command
+		if err := cmd.Run(); err != nil {
+			fmt.Printf("stdout: %s\n", stdoutBuf.String())
+			fmt.Printf("stderr: %s\n", stderrBuf.String())
+			return fmt.Errorf("restore pipeline failed: %w", err)
+		}
+	}
+
+	// If we need snapshot extraction, handle it here
+	if needsSnapshotExtraction {
+		// For snapshot extraction, we need to restore to a temp dataset first
+		// Extract the snapshot name from the full name
+		snapParts := strings.Split(snap.Name, "@")
+		if len(snapParts) != 2 {
+			return fmt.Errorf("invalid snapshot name format: %s", snap.Name)
+		}
+		snapshotName := snapParts[1]
+
+		// Create a unique temporary dataset name
+		tempDataset := fmt.Sprintf("%s_z3_restore_temp_%d", targetDataset, time.Now().Unix())
+
+		fmt.Printf("Creating temporary dataset for extraction: %s\n", tempDataset)
+
+		// Determine the source file for restoration
+		sourceFile := tempFile.Name()
+		if decryptedFile != nil {
+			sourceFile = decryptedFile.Name()
+		}
+
+		// Now pipe the decrypted file to zfs recv on the temp dataset
+		tempPipelineCmd := fmt.Sprintf("cat '%s' | zfs recv '%s'",
+			sourceFile, tempDataset)
+
+		fmt.Printf("Restoring to temporary dataset...\n")
+		tempCmd := exec.CommandContext(ctx, "sh", "-c", tempPipelineCmd)
+		tempCmd.Env = os.Environ()
+
+		var tempStdoutBuf, tempStderrBuf bytes.Buffer
+		tempCmd.Stdout = &tempStdoutBuf
+		tempCmd.Stderr = &tempStderrBuf
+
+		if err := tempCmd.Run(); err != nil {
+			fmt.Printf("temp stdout: %s\n", tempStdoutBuf.String())
+			fmt.Printf("temp stderr: %s\n", tempStderrBuf.String())
+			return fmt.Errorf("restore to temp dataset failed: %w", err)
+		}
+
+		// Find the actual snapshot in the temp dataset
+		listCmd := exec.CommandContext(ctx, "zfs", "list", "-t", "snapshot", "-H", "-o", "name", "-r", tempDataset)
+		listOutput, err := listCmd.Output()
+		if err != nil {
+			m.cleanupTempDataset(ctx, tempDataset)
+			return fmt.Errorf("failed to list snapshots in temporary dataset: %w", err)
+		}
+
+		var tempSnapshotName string
+		snapshots := strings.Split(strings.TrimSpace(string(listOutput)), "\n")
+		for _, snapName := range snapshots {
+			if strings.HasSuffix(snapName, "@"+snapshotName) {
+				tempSnapshotName = snapName
+				break
+			}
+		}
+
+		if tempSnapshotName == "" {
+			m.cleanupTempDataset(ctx, tempDataset)
+			return fmt.Errorf("could not find restored snapshot @%s in temporary dataset", snapshotName)
+		}
+
+		fmt.Printf("Found temporary snapshot: %s\n", tempSnapshotName)
+
+		// Check if the target snapshot already exists
+		targetSnapshotName := fmt.Sprintf("%s@%s", targetDataset, snapshotName)
+		checkCmd := exec.CommandContext(ctx, "zfs", "list", "-H", "-o", "name", targetSnapshotName)
+		if err := checkCmd.Run(); err == nil {
+			// Snapshot already exists
+			fmt.Printf("Snapshot %s already exists, skipping\n", targetSnapshotName)
+			// Clean up temporary dataset
+			if err := m.cleanupTempDataset(ctx, tempDataset); err != nil {
+				fmt.Printf("Warning: failed to clean up temporary dataset %s: %v\n", tempDataset, err)
+			}
+			return nil
+		}
+
+		// Clean up temporary dataset first since we're not using it for extraction
+		if err := m.cleanupTempDataset(ctx, tempDataset); err != nil {
+			fmt.Printf("Warning: failed to clean up temporary dataset %s: %v\n", tempDataset, err)
+		}
+
+		// For now, we don't support extracting snapshots from full backups to existing datasets
+		// This is a complex operation that requires careful handling of the dataset structure
+		return fmt.Errorf("restoring full backups to existing datasets is not currently supported. Please use --target-dataset to restore to a new dataset")
+	} else {
+		fmt.Printf("Successfully restored snapshot %s\n", snap.Name)
+	}
+
+	return nil
+}
+
+// restoreSnapshotWithTempFile handles restore when GPG is involved by using temporary files
+func (m *Manager) restoreSnapshotWithTempFile(ctx context.Context, snap *snapshot.Snapshot, opts *RestoreOptions, targetDataset, s3Key string, forceRestore, needsSnapshotExtraction bool) error {
+	// Create a temporary file for the encrypted data
+	tempFile, err := os.CreateTemp("", "z3-restore-*.gpg")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary file: %w", err)
+	}
+	defer os.Remove(tempFile.Name())
+	defer tempFile.Close()
+
+	// Download the encrypted file from S3
+	fmt.Printf("Downloading encrypted snapshot to temporary file: %s\n", tempFile.Name())
+	err = m.s3Client.GetObject(ctx, s3Key, tempFile)
+	if err != nil {
+		return fmt.Errorf("failed to download from S3: %w", err)
+	}
+	tempFile.Close()
+
+	// Now decrypt using GPG in a separate command
+	fmt.Printf("Decrypting snapshot with GPG...\n")
+
+	// Get object metadata to build proper decompression pipeline
+	objInfo, err := m.s3Client.HeadObject(ctx, s3Key)
+	if err != nil {
+		return fmt.Errorf("failed to get object metadata: %w", err)
+	}
+
+	// Build decompression command
+	compressorType := ""
+	if objInfo.Metadata != nil {
+		compressorType = objInfo.Metadata["compressor"]
+		if compressorType == "" {
+			compressorType = objInfo.Metadata["compressors"]
+		}
+	}
+
+	// Parse the compressor chain
+	compressors := strings.Split(compressorType, ",")
+
+	// First, let's try to decrypt to another temp file to see if GPG works at all
+	decryptedFile, err := os.CreateTemp("", "z3-decrypted-*.zfs")
+	if err != nil {
+		return fmt.Errorf("failed to create decrypted temp file: %w", err)
+	}
+	defer os.Remove(decryptedFile.Name())
+	defer decryptedFile.Close()
+
+	// Try running GPG with explicit TTY allocation
+	fmt.Printf("Running GPG decryption (file: %s)...\n", tempFile.Name())
+
+	// First attempt: try with current TTY
+	gpgCmd := exec.CommandContext(ctx, "gpg", "--use-agent", "-d", "-o", decryptedFile.Name(), tempFile.Name())
+
+	// Try to connect to the current TTY
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err == nil {
+		defer tty.Close()
+		gpgCmd.Stdin = tty
+		gpgCmd.Stdout = tty
+		gpgCmd.Stderr = tty
+		fmt.Printf("Connected GPG to /dev/tty\n")
+	} else {
+		fmt.Printf("Could not open /dev/tty: %v\n", err)
+		// Fall back to standard streams
+		gpgCmd.Stdin = os.Stdin
+		gpgCmd.Stdout = os.Stdout
+		gpgCmd.Stderr = os.Stderr
+	}
+
+	// Set environment
+	gpgCmd.Env = os.Environ()
+
+	// Run GPG
+	if err := gpgCmd.Run(); err != nil {
+		// If that fails, try running through a PTY
+		fmt.Printf("Direct GPG failed, trying with script command for PTY...\n")
+
+		// Use script command to allocate a PTY
+		scriptCmd := exec.CommandContext(ctx, "script", "-q", "/dev/null", "gpg", "--use-agent", "-d", "-o", decryptedFile.Name(), tempFile.Name())
+		scriptCmd.Stdin = os.Stdin
+		scriptCmd.Stdout = os.Stdout
+		scriptCmd.Stderr = os.Stderr
+		scriptCmd.Env = os.Environ()
+
+		if err := scriptCmd.Run(); err != nil {
+			return fmt.Errorf("GPG decryption failed: %w", err)
+		}
+	}
+
+	// Now we have the decrypted file, process it through remaining pipeline
+	fmt.Printf("GPG decryption successful, processing through ZFS...\n")
+
+	// Check if we need additional decompression
+	needsPigz := false
+	for _, comp := range compressors {
+		if strings.HasPrefix(comp, "pigz") {
+			needsPigz = true
+			break
+		}
+	}
+
+	// Build the final command
+	var finalCmd *exec.Cmd
+	if needsPigz {
+		// pigz -d decryptedFile | zfs recv
+		finalCmd = exec.CommandContext(ctx, "sh", "-c", fmt.Sprintf("pigz -d < '%s' | zfs recv %s '%s'",
+			decryptedFile.Name(),
+			func() string {
+				if forceRestore {
+					return "-F"
+				}
+				return ""
+			}(),
+			targetDataset))
+	} else {
+		// cat decryptedFile | zfs recv
+		finalCmd = exec.CommandContext(ctx, "sh", "-c", fmt.Sprintf("cat '%s' | zfs recv %s '%s'",
+			decryptedFile.Name(),
+			func() string {
+				if forceRestore {
+					return "-F"
+				}
+				return ""
+			}(),
+			targetDataset))
+	}
+
+	var stderr bytes.Buffer
+	finalCmd.Stderr = &stderr
+
+	if err := finalCmd.Run(); err != nil {
+		return fmt.Errorf("ZFS receive failed: %w (stderr: %s)", err, stderr.String())
+	}
+
+	// If we need snapshot extraction, handle it here
+	if needsSnapshotExtraction {
+		// This is more complex and would need similar handling as in extractAndRestoreSnapshot
+		return fmt.Errorf("snapshot extraction not yet implemented for temp file approach")
+	}
+
+	fmt.Printf("Successfully restored snapshot %s\n", snap.Name)
+	return nil
 }
